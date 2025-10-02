@@ -19,8 +19,7 @@ The NVEL directory I pulled when I pulled the FVS code was empty because it was 
 ```cd ~/Documents/ForestVegetationSimulator 
 cd ./volume 
 rm -rf NVEL 
-git submodule add https://github.com/FMSC-Measurements/VolumeLibrary 
-mv VolumeLibrary NVEL
+git submodule add https://github.com/FMSC-Measurements/VolumeLibrary NVEL 
 ```
 
 Where I first clear out the existing (not helpful) NVEL directory, link the submodule, then rename it to match the CMake file. 
