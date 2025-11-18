@@ -17,7 +17,7 @@ write.FVSfiles <- function(  trees, stand,
   stand$FOREST <- ifelse( is.na(stand$FOREST),  18, stand$FOREST ) 
   
   ### generate file names
-  filename <- tempfile(,tmpdir="temp")
+  filename <- tempfile()
   keyfilename <- paste0( filename, ".key")
   treefilename <- paste0( filename, ".tre")
   

@@ -1,12 +1,12 @@
 # functions
 source("00.initialize.R")
 source("02a.write_FVS_files.R")
-load(file="fia_to_fvs.Rdata",verbose=T)
+load(file = file.path('..', '..', 'data', 'firstpassFIA2FVS.RData'),verbose=T)
 
 # projection parameters
 num_years <- 55 # number of years into the future to project
 use_tripling <- FALSE
-use_calibration <- TRUE
+use_calibration <- FALSE
 use_regenmodel <- FALSE
 
 

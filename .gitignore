@@ -3,4 +3,5 @@ ignore/
 fvs-diagram/
 html/
 .Rproj.user
-data/fia/*.db
+data/fia/*
+*.db
