@@ -11,15 +11,18 @@
 #> - pcn: plot control number. String.
 #> - verbose: print queries (TRUE) or no (FALSE)?
 
-get_FIA <- function(db_loc, pcn, verbose = FALSE){
+get_FIA <- function(db_loc, fia_condSubset, verbose = FALSE){
   
   fia_db_conn <- DBI::dbConnect(RSQLite::SQLite(), db_loc) 
-  pcn <- as.character(pcn)
+  pcn <- fia_condSubset$PLT_CN
+  # get subset columns that will be used to create unique identifier
+  j <- dplyr::select(fia_condSubset, PLT_CN, STATECD, COUNTYCD, UNITCD, PLOT)
   
   # construct and execute SQL query using tidyverse-style piping
   stand_initQ <- dplyr::tbl(fia_db_conn, 'FVS_STANDINIT_PLOT')|> 
-    dplyr::filter(STAND_CN == pcn) |>
-    dplyr::select(STAND_CN, STAND_ID, VARIANT,
+    dplyr::filter(STAND_CN == fia_condSubset$PLT_CN) |>
+    dplyr::select(STAND_CN, STAND_ID,
+                  VARIANT, STATE, COUNTY,
                   INV_DAY, INV_YEAR, INV_MONTH,
                   LATITUDE, LONGITUDE, REGION, FOREST,
                   PV_CODE, ECOREGION,
@@ -32,13 +35,13 @@ get_FIA <- function(db_loc, pcn, verbose = FALSE){
                   DG_TRANS, DG_MEASURE,
                   HTG_TRANS, HTG_MEASURE,
                   MORT_MEASURE,
-                  SITE_SPECIES, SITE_INDEX,
-                  STATE, COUNTY)
+                  SITE_SPECIES, SITE_INDEX)
   if(verbose){
     message('SQL query:', dplyr::show_query(stand_initQ))
   }
   
-  stand_init <- dplyr::collect(stand_initQ) # execute query
+  stand_init <- dplyr::collect(stand_initQ) |> # execute query
+    dplyr::right_join(j, by = dplyr::join_by(STAND_CN == PLT_CN))
 
   # did we return anything?
   if(nrow(stand_init) == 0){
@@ -52,7 +55,7 @@ get_FIA <- function(db_loc, pcn, verbose = FALSE){
     # get tree info
     fia_treeQ <- dplyr::tbl(fia_db_conn, 'FVS_TREEINIT_PLOT') |>
       dplyr::filter(STAND_CN == pcn) |>
-      dplyr::select(STAND_CN, STAND_ID, STANDPLOT_ID, PLOT_ID,
+      dplyr::select(STAND_CN, STAND_ID, STANDPLOT_ID, PLOT_ID, PLOT_CN,
                     TREE_ID, HISTORY, TREE_COUNT,
                     SPECIES,
                     DIAMETER, DG,
