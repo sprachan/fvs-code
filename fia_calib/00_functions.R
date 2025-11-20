@@ -116,15 +116,14 @@ set_FVSie_defaults <- function(stand){
 #> - treelist: tree list associated with the stand given in standinfo.
 
 clean_FIA_treeList <- function(treelist, standinfo){
-  stopifnot(nrow(standinfo) <= nrow(treelist))
   # copy over information from the stand list
-  treelist$SLOPE <- standinfo$SLOPE # slope, %
-  treelist$ASPECT <- standinfo$ASPECT # aspect, degrees
-  treelist$PV_CODE <- as.numeric(standinfo$PV_CODE) # potential veg aka habitat type
-  treelist$TOPO <- as.numeric(standinfo$TOPO) # where on the slope we are: 1 = bottom, etc.
-  treelist$SPREP <- 0 # site prep code. Set to 0..? documentation says 1,2,3,4
+  treelist <- dplyr::select(standinfo,
+                            SLOPE, ASPECT, PV_CODE, TOPO,
+                            STAND_CN) |>
+    dplyr::right_join(treelist, by = join_by(STAND_CN))
   
   # add other values
+  treelist$SPREP <- 0
   treelist$TVAL <- 0 # value of trees
   treelist$CUT <- 0 # cut list?
   
