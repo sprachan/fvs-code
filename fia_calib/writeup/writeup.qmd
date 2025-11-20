@@ -1,0 +1,152 @@
+---
+title: "Write Up"
+format: html
+editor: visual
+---
+
+```{r}
+# Functions and Directories ----
+source('../00_functions.R')
+
+# FVS directories
+fvs_dir <- file.path('C:', 'FVS', 'FVSSoftware')
+fvs_bin <- file.path(fvs_dir, 'FVSbin')
+fvs_rVer <- list.files(file.path(fvs_dir, 'R')) # R version used for naming dirs
+rFVS_dir <- file.path(fvs_dir, 'R', fvs_rVer, 'library') # rFVS location
+
+# Data directories and files
+fia_path <- file.path('..', '..', 'data', 'fia')
+fia_sql <- file.path(fia_path, 'SQLite_FIADB_MT.db')
+fvs_ready <- file.path('..', '..', 'data', 'fvs_ready')
+fvs_runs <- file.path('..', '..', 'data', 'fvs_runFiles')
+
+# Packages -----
+library('rFVS', lib.loc = rFVS_dir) # rFVS
+library(dplyr)
+library(ggplot2)
+library(usmap)
+library(terra)
+library(sf)
+
+# Read in remeasurement data ----
+standInit <- readRDS(file.path(fvs_ready, 'FVSstandInitAll.rds'))
+treeInit <- readRDS(file.path(fvs_ready, 'FVStreeInitAll.rds'))
+head(standInit, 5)
+head(treeInit, 5)
+
+# Species table, for reference
+s <- unique(treeInit$SPECIES)
+conn <- DBI::dbConnect(RSQLite::SQLite(), fia_sql)
+species_tab <- tbl(conn, 'REF_SPECIES') |>
+  filter(SPCD %in% s) |>
+  select(SPCD, COMMON_NAME, SPECIES_SYMBOL) |>
+  collect()
+DBI::dbDisconnect(conn)
+```
+
+Let's only work with plots that are meant to be used with the Inland Empire Variant (IE) and in the Northern Rockies and Bitterroot Valley ecoregion:
+
+```{r}
+standInitIE <- filter(standInit,
+                      VARIANT == 'IE',
+                      substr(ECOREGION, 1, 5) == 'M332B')
+
+```
+
+This gets us down to `{r} nrow(treeInitIE)` tree observations from `{r} nrow(standInitIE)` plot observations.
+
+Somewhat infuriatingly, the tree table does not have measurement year/inventory year. We will have to add this as a column using information in standInitIE:
+
+```{r}
+treeInitIE <- treeInit[treeInit$STAND_CN %in% standInitIE$STAND_CN,] |>
+  left_join(select(standInitIE, STAND_CN, INV_YEAR), by = join_by(STAND_CN)) |>
+  left_join(species_tab, by = join_by(SPECIES == SPCD))
+```
+
+## Exploratory Data Analysis
+
+First, let's take a look at where these plots are in the state:
+
+```{r}
+mt_map <- us_map(regions = 'county', include = 'Montana') # state outline
+stand_locs <- vect(standInitIE, geom = c('LONGITUDE', 'LATITUDE')) 
+# FIA documentation tells us that they use NAD83 datum
+crs(stand_locs) <- '+proj=longlat +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +no_defs +type=crs'
+
+stand_locs <- project(stand_locs, crs(mt_map)) |> # project stands to montana
+st_as_sf()
+stand_map <- ggplot()+
+  geom_sf(data = mt_map)+
+  # don't want to plot the same plot on top of itself a bunch of times
+  geom_sf(data = distinct(stand_locs, PID, .keep_all = TRUE), alpha = 0.25)
+stand_map
+```
+
+Now, we want to create a column REM_CD that tells us whether this is the plot's first measure (REM_CD = 0), first remeasure (REM_CD = 1), or second remeasure (REM_CD = 2).
+
+```{r}
+standInitIE <- standInitIE |>
+  arrange(PID, INV_YEAR) |>
+  group_by(PID) |>
+  mutate(REM_CD = case_when(INV_YEAR == min(INV_YEAR) ~ 0,
+                            n() == 2 ~ 1,
+                            INV_YEAR == max(INV_YEAR) ~ 2,
+                            INV_YEAR != max(INV_YEAR) ~ 1,
+                            .default = NA)) |>
+  ungroup()
+```
+
+Let's see what our breakdown of remeasured plots looks like.
+
+```{r}
+rem_plot <- standInitIE |>
+  count(REM_CD) |>
+  ggplot(aes(x = REM_CD, y = n))+
+  geom_col()+
+  geom_text(aes(label = n),
+            vjust = -0.5)
+rem_plot
+```
+
+So there are a good number of plots that have been remeasured once (REM_CD = 1), but very few that have been remeasured twice (REM_CD = 2). Let's see how many trees this corresponds with.
+
+```{r}
+# First, need to associate tree records with REM_CDs
+treeInitIE <- select(standInitIE, STAND_CN, REM_CD) |>
+  right_join(treeInitIE, by = join_by(STAND_CN))
+
+# Now plot
+tree_rem_plot <- count(treeInitIE, REM_CD) |>
+  ggplot(aes(x = REM_CD, y = n))+
+  geom_col()+
+  geom_text(aes(label = n), vjust = -0.5)
+tree_rem_plot
+```
+
+Finally, let's break down remeasurements by species (how many species have been remeasured in each REM_CD):
+
+```{r}
+rem_species_plot <- count(treeInitIE, REM_CD, SPECIES_SYMBOL) |>
+  ggplot(aes(x = SPECIES_SYMBOL, y = n))+
+  geom_col()+
+  facet_wrap(facets = vars(REM_CD), nrow = 3, scales = 'free_y')
+rem_species_plot
+```
+
+It seems like even though we don't have many trees that have been remeasured twice, we still have more than enough of the most common species.
+
+## Testing Design
+
+To test the efficacy of FIA calibration, we will test FVS predictions from initial measure –\> first remeasure using 3 calibration techniques:
+
+1.  No calibration
+2.  Self calibration using growth data from first -\> second remeasurement.
+3.  Calibration using OLS regression.
+
+## Get uncalibrated predictions
+
+First, we have to load our FVS variant:
+
+```{r}
+rFVS::fvsLoad('FVSie', bin = fvs_bin)f
+```
