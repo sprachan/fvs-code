@@ -180,6 +180,7 @@ write_FVS_keywords <- function(stand, ncycles = 10, reporting_ints,
   if(!is.null(opt_args$SDIMAX)){
     stopifnot(names(opt_args$SDIMAX) == c('Spp', 'Max'))
   }
+  
   # first 2 lines: Stand identity (STDIDENT)
   lines[[1]] <- 'STDIDENT'
   if(is.null(opt_args$STDIDENT)){
@@ -271,9 +272,43 @@ write_FVS_keywords <- function(stand, ncycles = 10, reporting_ints,
     lines[[27]] <- str_padParam('END')
   }
   
+  # database output arguments
+  if(!is.null(opt_args$DATABASE)){
+    stopifnot(sum(names(opt_args$DATABASE) %in% c('DSNOUT',
+                                                  'COMPUTDB',
+                                                  'CALBSTDB',
+                                                  'INVSTATS',
+                                                  'SUMMARY',
+                                                  'TREELIDB'))>0)
+      lines[[30]] <- str_padParam('DATABASE')
+      if(!is.null(opt_args$DATABASE$DSNOUT)){
+        lines[[31]] <- str_padParam('DSNOUT')
+        lines[[32]] <- str_padParam(opt_args$DATABASE$DSNOUT)
+      }
+      if(!is.null(opt_args$DATABASE$COMPUTDB)){
+        if(opt_args$DATABASE$COMPUTDB) lines[[33]] <- str_padParam('COMPUTDB')
+      }
+      if(!is.null(opt_args$DATABASE$CALBSTDB)){
+        if(opt_args$DATABASE$CALBSTDB) lines[[34]] <- str_padParam('CALBSTDB')
+      }
+      if(!is.null(opt_args$DATABASE$INVSTATS)){
+        if(opt_args$DATABASE$INVSTATS) lines[[35]] <- str_padParam('INVSTATS')
+      }
+      if(!is.null(opt_args$DATABASE$SUMMARY)){
+        if(opt_args$DATABASE$SUMMARY) lines[[36]] <- str_padParam('SUMMARY')
+      }
+      if(!is.null(opt_args$DATABASE$TREELIDB)){
+        lines[[37]] <- paste0(str_padParam('TREELIDB'),
+                              str_padParam(opt_args$DATABASE$TREELIDB[1]),
+                              str_padParam(opt_args$DATABASE$TREELIDB[2]))
+      }
+      lines[[40]] <- str_padParam('END')
+    }
+  
+  
   # End file
-  lines[[30]] <- str_padParam('PROCESS')
-  lines[[31]] <- str_padParam('STOP')
+  lines[[50]] <- str_padParam('PROCESS')
+  lines[[51]] <- str_padParam('STOP')
   
   out <- unlist(lapply(Filter(Negate(is.null), lines), \(x) sprintf('%80-s', x)))
   write(out, file = key_fileName)
