@@ -92,7 +92,8 @@ standInitIE <- standInitIE |>
                             n() == 2 ~ 1,
                             INV_YEAR == max(INV_YEAR) ~ 2,
                             INV_YEAR != max(INV_YEAR) ~ 1,
-                            .default = NA)) |>
+                            .default = NA),
+         N_REM = max(REM_CD)) |>
   ungroup()
 ```
 
@@ -133,7 +134,7 @@ rem_species_plot <- count(treeInitIE, REM_CD, SPECIES_SYMBOL) |>
 rem_species_plot
 ```
 
-It seems like even though we don't have many trees that have been remeasured twice, we still have more than enough of the most common species.
+It seems like even though we don't have many trees that have been remeasured twice, the most common species are pretty well represented in the 2nd remeasurement set.
 
 ## Testing Design
 
@@ -149,4 +150,60 @@ First, we have to load our FVS variant:
 
 ```{r}
 rFVS::fvsLoad('FVSie', bin = fvs_bin)
+```
+
+Now, we need to access all stands that were measured twice, and access their information from the first remeasurement. This will be our set of initial stands to project.
+
+```{r}
+t0_stands <- filter(standInitIE, N_REM == 1, REM_CD == 0)
+
+```
+
+This is a total of `{r} nrow(t0_stands)` stands. Now we need to get the associated trees:
+
+```{r}
+t0_trees <- filter(treeInitIE, STAND_CN %in% t0_stands$STAND_CN) |>
+  clean_FIA_treeList(standinfo = standInitIE)
+```
+
+This gives us a total of `{r} nrow(t0_trees)` trees.
+
+We'll make a directory to save keyword, tree, and output files.
+
+```{r}
+# make directory. Use date and time to help with ID later
+dt <- paste0(format(Sys.Date(), '%b%d%Y'), '_', format(Sys.time(), '%H.%M'), collapse = '')
+outdir <- file.path(fvs_runs, dt)
+dir.create(outdir)
+```
+
+Now, we will specify some keywords that will be passed to a function that formats keywords as FVS needs them:
+
+```{r}
+DATABASE <- list(DSNOUT = file.path(outdir, 'uncalib.db'),
+                 SUMMARY= TRUE,
+                 INVSTATS = TRUE)
+```
+
+And finally write our keyword and tree list files for FVS to know how to run. We generate a .key file and a .tre file, and the prefix for those files is returned; we save that as `filename`. Other parameters:
+
+-   ncycles = 2 because the cycle length is 10 years and we want to project 20 years.
+
+-   reporting_ints: the intervals (10 years, 20 years) that we want to get FVS to spit out results for
+
+-   Turn off calibration, tripling, and regeneration (all set to FALSE)
+
+```{r}
+filenames <- rep(NA, nrow(t0_stands))
+for(i in 1:2){
+  st <- t0_stands[i,]
+  tr <- dplyr::filter(t0_trees, STAND_CN == st$STAND_CN)
+  filenames[i] <- write_FVS_files(trees = t0_trees, stand = t0_stand,
+                            ncycles = 1,
+                            reporting_ints = c(10, 20),
+                            calibrate = FALSE, triple = FALSE, add_regen = FALSE,
+                            STDIDENT = paste0('UNCALST',i),
+                            DATABASE = DATABASE,
+                            out_dir = outdir)
+}
 ```

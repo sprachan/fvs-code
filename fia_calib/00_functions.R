@@ -321,6 +321,7 @@ write_FVS_keywords <- function(stand, ncycles = 10, reporting_ints,
 write_FVS_treeList <- function(tl, tree_fileName){
   if(tibble::is_tibble(tl)){
     as.data.frame(tl)
+
   }
   tl$PV_CODE <- as.numeric(tl$PV_CODE)
   # replace missing values with empties
@@ -349,7 +350,7 @@ write_FVS_treeList <- function(tl, tree_fileName){
                          tl$DIAMETER,tl$DG,tl$HT,tl$HTTOPK,tl$HTG,tl$CRcode,
                          tl$DAMAGE1,tl$SEVERITY1,tl$DAMAGE2,tl$SEVERITY2,tl$DAMAGE3,tl$SEVERITY3,
                          tl$TVAL,tl$CUT,
-                         tl$SLOPE,tl$ASPECT,tl$PV_CODE,tl$TOPO,tl$SPREP,tl$AGE)
+                         tl$SLOPE,tl$ASPECT,as.numeric(tl$PV_CODE),tl$TOPO,tl$SPREP,tl$AGE)
   cat(flat_format, file=tree_fileName, sep="\n")           
   
 }

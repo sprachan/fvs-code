@@ -14,7 +14,8 @@ treeInit <- readRDS(file.path(fvs_ready, 'FVStreeInitAll.RDS'))
 # Test on just one stand
 testStand <- standInit[1,]
 testTrees <- treeInit[treeInit$STAND_CN == testStand$STAND_CN,] |>
-  clean_FIA_treeList(standinfo = testStand)
+  clean_FIA_treeList(standinfo = testStand) |>
+  as.data.frame()
 str(testStand)
 str(testTrees)
 
