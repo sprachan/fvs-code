@@ -207,22 +207,22 @@ write_FVS_keywords <- function(stand, ncycles = 10, reporting_ints,
   
   # Specify stand information:
   lines[[5]] <- paste0(str_padParam('STDINFO'),
-                       str_padParam(stand$FOREST), # 1 national forest code
-                       str_padParam(stand$PV_CODE), # 2 plant community code
+                       str_padParam(paste0(1,stand$FOREST)), # 1 national forest code
+                       str_padParam(as.character(stand$PV_CODE)), # 2 plant community code
                        str_padParam(stand$AGE), # 3 stand age
                        str_padParam(stand$ASPECT), # 4 aspect in degrees
                        str_padParam(stand$SLOPE), # 5 slope, %
-                       str_padParam(stand$ELEVFT)) # 6 elevation, 100s of feet
+                       str_padParam(stand$ELEVFT/10)) # 6 elevation, 100s of feet
   
   # Specify tree list outputs
   lines[[6]] <- paste0(str_padParam('TREELIST'),
                        str_padParam(0), # 1 cycles to print. 0 = every cycle
-                       str_padParam(3), # 2 file reference,
+                       str_padParam('3'), # 2 file reference,
                        str_padParam(0), # 3 print header? 0 = yes, human readable
                        str_padParam(0), # 4 print both cycle 0 and 1
                        str_padParam(0), # 5 live/dead treelist
-                       str_padParam(''), # 6 not used
-                       str_padParam(1) # 7 print cycle 0 input and estimated dbh increments
+                       str_padParam(0), # 6 not used
+                       str_padParam(0) # 7 print cycle 0 input and estimated dbh increments
                        )
   
   # Specify tree data format
@@ -257,18 +257,23 @@ write_FVS_keywords <- function(stand, ncycles = 10, reporting_ints,
                           )
   }
   
+  t1 <- sprintf("GROWTH    %10.0f%10.0f%10.0f%10.0f%10.0f",
+                stand$DG_TRANS,stand$DG_MEASURE,
+                stand$HTG_TRANS,stand$HTG_MEASURE,stand$MORT_MEASURE)
+  lines[[23]] <- t1
+  
   if(!calibrate){
-    lines[[23]] <- str_padParam('NOCALIB')
-    lines[[24]] <- str_padParam('NOHTDREG')
+    lines[[24]] <- str_padParam('NOCALIB')
+    lines[[25]] <- str_padParam('NOHTDREG')
   }
   
   if(!add_regen){
-    lines[[25]] <- str_padParam('NOAUTOES')
+    lines[[26]] <- str_padParam('NOAUTOES')
   }else{
-    lines[[25]] <- str_padParam('ESTAB')
-    lines[[26]] <- paste0(str_padParam('RANNSEED'),
+    lines[[27]] <- str_padParam('ESTAB')
+    lines[[28]] <- paste0(str_padParam('RANNSEED'),
                           str_padParam(opt_args$RANNSEED))
-    lines[[27]] <- str_padParam('END')
+    lines[[29]] <- str_padParam('END')
   }
   
   # database output arguments
@@ -418,7 +423,7 @@ write.FVSfiles <- function(  trees, stand,
   stand$FOREST <- ifelse( is.na(stand$FOREST),  18, stand$FOREST ) 
   
   ### generate file names
-  filename <- tempfile(,tmpdir="temp")
+  filename <- tempfile()
   keyfilename <- paste0( filename, ".key")
   treefilename <- paste0( filename, ".tre")
   
@@ -571,3 +576,12 @@ write.fvs.tree.file <- function( tl, std, treefilename )
   cat(flat_format, file=treefilename, sep="\n")              
   
 }
+
+
+# function for getting tree lists from FVS
+fetchTrees <- function(){
+  tree_list <- fvsGetTreeAttrs(c("id","plot","age","species","dbh","ht","cratio","tpa","mcuft","bdft"))
+  tree_list$year <- fvsGetEventMonitorVariables("year")
+  tree_list
+}
+
