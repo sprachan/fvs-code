@@ -120,7 +120,7 @@ clean_FIA_treeList <- function(treelist, standinfo){
   treelist <- dplyr::select(standinfo,
                             SLOPE, ASPECT, PV_CODE, TOPO,
                             STAND_CN) |>
-    dplyr::right_join(treelist, by = join_by(STAND_CN))
+    dplyr::right_join(treelist, by = dplyr::join_by(STAND_CN))
   
   # add other values
   treelist$SPREP <- 0
@@ -319,6 +319,10 @@ write_FVS_keywords <- function(stand, ncycles = 10, reporting_ints,
 #>   clean_FIA_treeList()
 #> - tree_fileName: file name, including '.tre', to write tree list file to.
 write_FVS_treeList <- function(tl, tree_fileName){
+  if(tibble::is_tibble(tl)){
+    as.data.frame(tl)
+  }
+  tl$PV_CODE <- as.numeric(tl$PV_CODE)
   # replace missing values with empties
   fvs_formats <- data.frame(tree_var=c("PLOT_ID","fvs.TREE_ID","TREE_COUNT","HISTORY","SPECIES",
                                        "DIAMETER","DG","HT","HTTOPK","HTG","CRcode",

@@ -148,5 +148,5 @@ To test the efficacy of FIA calibration, we will test FVS predictions from initi
 First, we have to load our FVS variant:
 
 ```{r}
-rFVS::fvsLoad('FVSie', bin = fvs_bin)f
+rFVS::fvsLoad('FVSie', bin = fvs_bin)
 ```

@@ -8,8 +8,8 @@ source('00_functions.R')
 source('01_setup.R')
 
 # Data
-standInit <- readRDS(file.path(fvs_ready, 'FVSstandInit.RDS'))
-treeInit <- readRDS(file.path(fvs_ready, 'FVStreeInit.RDS'))
+standInit <- readRDS(file.path(fvs_ready, 'FVSstandInitAll.RDS'))
+treeInit <- readRDS(file.path(fvs_ready, 'FVStreeInitAll.RDS'))
 
 # Test on just one stand
 testStand <- standInit[1,]
@@ -26,7 +26,7 @@ dt <- paste0(format(Sys.Date(), '%b%d%Y'), '_', format(Sys.time(), '%H.%M'), col
 outdir <- file.path(fvs_runs, dt)
 dir.create(outdir)
 
-filename <- write_FVS_files(trees = testTrees, stand = testStand,
+filename <- write_FVS_files(trees = as.data.frame(testTrees), stand = testStand,
                             ncycles = 6, reporting_ints = 10,
                             calibrate = FALSE, triple = FALSE, add_regen = FALSE,
                             STDIDENT = 'FVS_Test',
