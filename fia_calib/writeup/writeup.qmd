@@ -172,7 +172,7 @@ uncalib_proj <- list()
 uncalib_proj$treelist <- NULL
 uncalib_proj$summary <- NULL
 
-for(i in 1:nrow(t0_stands)){
+for(i in 1:3){
   st <- t0_stands[i,] 
   tr <- t0_trees[t0_trees$STAND_CN == st$STAND_CN,]
 
@@ -183,7 +183,8 @@ for(i in 1:nrow(t0_stands)){
                              calibrate=use_calibration,
                              triple=use_tripling,
                              add_regen=use_regenmodel,
-                             outdir = outdir)
+                             outdir = outdir,
+                             STDIDENT = paste0('UNCALBST', i))
   
     # grow the stand
   fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))

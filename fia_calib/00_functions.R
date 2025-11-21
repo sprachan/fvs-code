@@ -417,7 +417,8 @@ write.FVSfiles <- function(  trees, stand,
                              add_regen=FALSE,
                              customSDImax=NULL,
                              randomseed=2025,
-                             outdir){
+                             outdir,
+                             STDIDENT = 'FVSProjection'){
   
   #stand <- standinit
   #trees <- treeinit
@@ -442,7 +443,7 @@ write.FVSfiles <- function(  trees, stand,
   
   ### stand identification
   write("STDIDENT", file=keyfilename, append=T)  
-  write("FVSProjection",  file=keyfilename, append=T)  
+  write(STDIDENT,  file=keyfilename, append=T)  
   t1 <- sprintf("RANNSEED  %10.0f",randomseed)
   write(t1, file=keyfilename, append=T )
   
