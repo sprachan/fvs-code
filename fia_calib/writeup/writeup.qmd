@@ -59,8 +59,7 @@ Somewhat infuriatingly, the tree table does not have measurement year/inventory 
 
 ```{r}
 treeInitIE <- treeInit[treeInit$STAND_CN %in% standInitIE$STAND_CN,] |>
-  left_join(select(standInitIE, STAND_CN, INV_YEAR), by = join_by(STAND_CN)) |>
-  left_join(species_tab, by = join_by(SPECIES == SPCD))
+  left_join(select(standInitIE, STAND_CN, INV_YEAR), by = join_by(STAND_CN))
 ```
 
 ## Exploratory Data Analysis
@@ -124,18 +123,6 @@ tree_rem_plot <- count(treeInitIE, REM_CD) |>
 tree_rem_plot
 ```
 
-Finally, let's break down remeasurements by species (how many species have been remeasured in each REM_CD):
-
-```{r}
-rem_species_plot <- count(treeInitIE, REM_CD, SPECIES_SYMBOL) |>
-  ggplot(aes(x = SPECIES_SYMBOL, y = n))+
-  geom_col()+
-  facet_wrap(facets = vars(REM_CD), nrow = 3, scales = 'free_y')
-rem_species_plot
-```
-
-It seems like even though we don't have many trees that have been remeasured twice, the most common species are pretty well represented in the 2nd remeasurement set.
-
 ## Testing Design
 
 To test the efficacy of FIA calibration, we will test FVS predictions from initial measure –\> first remeasure using 3 calibration techniques:
@@ -146,16 +133,12 @@ To test the efficacy of FIA calibration, we will test FVS predictions from initi
 
 ## Get uncalibrated predictions
 
-First, we have to load our FVS variant:
-
-```{r}
-rFVS::fvsLoad('FVSie', bin = fvs_bin)
-```
-
 Now, we need to access all stands that were measured twice, and access their information from the first remeasurement. This will be our set of initial stands to project.
 
 ```{r}
-t0_stands <- filter(standInitIE, N_REM == 1, REM_CD == 0)
+t0_stands <- filter(standInitIE, N_REM == 1, REM_CD == 0) |>
+  select(-N_REM, -REM_CD) |>
+  as.data.frame()
 
 ```
 
@@ -163,7 +146,8 @@ This is a total of `{r} nrow(t0_stands)` stands. Now we need to get the associat
 
 ```{r}
 t0_trees <- filter(treeInitIE, STAND_CN %in% t0_stands$STAND_CN) |>
-  clean_FIA_treeList(standinfo = standInitIE)
+  clean_FIA_treeList(standinfo = standInitIE) |>
+  as.data.frame()
 ```
 
 This gives us a total of `{r} nrow(t0_trees)` trees.
@@ -175,35 +159,34 @@ We'll make a directory to save keyword, tree, and output files.
 dt <- paste0(format(Sys.Date(), '%b%d%Y'), '_', format(Sys.time(), '%H.%M'), collapse = '')
 outdir <- file.path(fvs_runs, dt)
 dir.create(outdir)
-```
-
-Now, we will specify some keywords that will be passed to a function that formats keywords as FVS needs them:
-
-```{r}
-DATABASE <- list(DSNOUT = file.path(outdir, 'uncalib.db'),
-                 SUMMARY= TRUE,
-                 INVSTATS = TRUE)
-```
-
-And finally write our keyword and tree list files for FVS to know how to run. We generate a .key file and a .tre file, and the prefix for those files is returned; we save that as `filename`. Other parameters:
-
--   ncycles = 2 because the cycle length is 10 years and we want to project 20 years.
-
--   reporting_ints: the intervals (10 years, 20 years) that we want to get FVS to spit out results for
-
--   Turn off calibration, tripling, and regeneration (all set to FALSE)
-
-```{r}
 filenames <- rep(NA, nrow(t0_stands))
-for(i in 1:2){
+for(i in 1:1){
   st <- t0_stands[i,]
-  tr <- dplyr::filter(t0_trees, STAND_CN == st$STAND_CN)
-  filenames[i] <- write_FVS_files(trees = t0_trees, stand = t0_stand,
-                            ncycles = 1,
+  tr <- t0_trees[t0_trees$STAND_CN == st$STAND_CN,]
+  head(st)
+  head(tr)
+  nrow(tr)
+  rFVS::fvsLoad("FVSie", fvs_bin)
+  filenames[i] <- write_FVS_files(trees = tr, stand = st,
+                            ncycles = 10,
                             reporting_ints = c(10, 20),
                             calibrate = FALSE, triple = FALSE, add_regen = FALSE,
                             STDIDENT = paste0('UNCALST',i),
-                            DATABASE = DATABASE,
                             out_dir = outdir)
+  
+    # grow the stand
+  fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
+  
+  # get grown tree list
+  fvs_output <- fvsInteractRun(AfterEM1="fetch_trees()",
+                               SimEnd=fvsGetSummary) 
+  names(fvs_output)
+  
+  fvs_tree_list <- NULL 
+  for (j in 1:(length(fvs_output)-1)){
+    new_trees <- fvs_output[[j]]$AfterEM1
+    fvs_tree_list <- rbind(fvs_tree_list,new_trees)
+  }
+  rFVS::fvsLoad("FVSie", fvs_bin)
 }
 ```
