@@ -587,7 +587,7 @@ write.fvs.tree.file <- function( tl, std, treefilename )
 # function for getting tree lists from FVS
 fetchTrees <- function(){
   tree_list <- fvsGetTreeAttrs(c("id","plot","age","species","dbh","ht","cratio","tpa","mcuft","bdft"))
-  # tree_list$year <- fvsGetEventMonitorVariables("year")
+  tree_list$year <- fvsGetEventMonitorVariables("year")
   tree_list
 }
 

@@ -167,12 +167,17 @@ use_tripling <- FALSE
 use_calibration <- FALSE
 use_regenmodel <- FALSE
 
-for(i in 1:1){
-  st <- t0_stands[i,] |> select(-PID)
+# FVS will  overwrite each stand, so we need storage
+uncalib_proj <- list()
+uncalib_proj$treelist <- NULL
+uncalib_proj$summary <- NULL
+
+for(i in 1:nrow(t0_stands)){
+  st <- t0_stands[i,] 
   tr <- t0_trees[t0_trees$STAND_CN == st$STAND_CN,]
 
   rFVS::fvsLoad("FVSie", fvs_bin)
-  filename <- write.FVSfiles(trees=tr,
+  filenames[i] <- write.FVSfiles(trees=tr,
                              stand=st,
                              years_out=num_years,
                              calibrate=use_calibration,
@@ -181,18 +186,43 @@ for(i in 1:1){
                              outdir = outdir)
   
     # grow the stand
-  fvsSetCmdLine(paste0("--keywordfile=",filename,".key"))
+  fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
   
   # get grown tree list
   fvs_output <- fvsInteractRun(AfterEM1="fetchTrees()",
                                SimEnd=fvsGetSummary) 
   names(fvs_output)
   
-  fvs_tree_list <- NULL 
-  for (j in 1:(length(fvs_output)-1)){
-    new_trees <- fvs_output[[j]]$AfterEM1
-    fvs_tree_list <- rbind(fvs_tree_list,new_trees)
-  }
+  # 2007 tree list in element 1, just to check
+  tl1 <- fvs_output[[1]]$AfterEM1 |>
+    dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
+                     by = dplyr::join_by(id == fvs.TREE_ID))
+  nrow(tl1)
+  # 2017 tree list output in element 2. use left_join to match up with TUID
+  tl2 <- fvs_output[[2]]$AfterEM1 |>
+    dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID), 
+                     by = join_by(id == fvs.TREE_ID))
+  nrow(tl2)
+  tl <- rbind(tl1, tl2)
+  nrow(tl)
+  uncalib_proj$treelist <- rbind(uncalib_proj$treelist, tl)
+  
+  # similar with plot summaries
+  uncalib_proj$summary <- rbind(uncalib_proj$summary,
+                                cbind(fvs_output[[length(fvs_output)]],
+                                      data.frame(PID = st$PID)))
+  
   rFVS::fvsLoad("FVSie", fvs_bin)
 }
 ```
+
+Let's check our outputs:
+
+```{r}
+names(fvs_output)
+
+saveRDS(uncalib_proj$treelist, file = 'uncalib1.RData')
+saveRDS(uncalib_proj$summary, file = 'uncalib1summary.RData')
+```
+
+There is an issue in run 2 where FVS is only projecting the trees that had diameter = 0.1...
