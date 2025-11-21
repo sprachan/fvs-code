@@ -154,8 +154,13 @@ clean_FIA_treeList <- function(treelist, standinfo){
 #> Arguments
 #> - string: the string to pad. The function adds spaces to the string so
 #>   that it takes up 10 spaces total.
-str_padParam <- function(string){
-  out <- stringr::str_pad(string, 10, side = 'right')
+str_padParam <- function(string, right = FALSE){
+  if(!right){
+    out <- stringr::str_pad(string, 10, side = 'left')
+  }else{
+    out <- stringr::str_pad(string, 10, side = 'right')
+  }
+  
   return(out)
 }
 
@@ -190,12 +195,12 @@ write_FVS_keywords <- function(stand, ncycles = 10, reporting_ints,
   
   # Specify sampling information:
   #> Inventory year (INVYEAR)
-  lines[[3]] <- paste0(str_padParam('INVYEAR'),
+  lines[[3]] <- paste0(str_padParam('INVYEAR', T),
                        str_padParam(stand$INV_YEAR))
                        
   
   #> Sampling design (DESIGN)
-  lines[[4]] <- paste0(str_padParam('DESIGN'),
+  lines[[4]] <- paste0(str_padParam('DESIGN', T),
                        str_padParam(-1), # 1 inverse of Basal Area factor (1/1 acre)
                        str_padParam(0), # 2 inverse of small tree plot
                        str_padParam('5.0'), # 3 diameter breakpoint b/w large and small
@@ -206,7 +211,7 @@ write_FVS_keywords <- function(stand, ncycles = 10, reporting_ints,
                       ) 
   
   # Specify stand information:
-  lines[[5]] <- paste0(str_padParam('STDINFO'),
+  lines[[5]] <- paste0(str_padParam('STDINFO', T),
                        str_padParam(paste0(1,stand$FOREST)), # 1 national forest code
                        str_padParam(as.character(stand$PV_CODE)), # 2 plant community code
                        str_padParam(stand$AGE), # 3 stand age
@@ -215,7 +220,7 @@ write_FVS_keywords <- function(stand, ncycles = 10, reporting_ints,
                        str_padParam(stand$ELEVFT/10)) # 6 elevation, 100s of feet
   
   # Specify tree list outputs
-  lines[[6]] <- paste0(str_padParam('TREELIST'),
+  lines[[6]] <- paste0(str_padParam('TREELIST', T),
                        str_padParam(0), # 1 cycles to print. 0 = every cycle
                        str_padParam('3'), # 2 file reference,
                        str_padParam(0), # 3 print header? 0 = yes, human readable
@@ -226,27 +231,27 @@ write_FVS_keywords <- function(stand, ncycles = 10, reporting_ints,
                        )
   
   # Specify tree data format
-  lines[[7]] <- str_padParam('TREEFMT')
+  lines[[7]] <- str_padParam('TREEFMT', T)
   lines[[8]] <- '(I4,I4,F8.3,I1,A3,F5.1,F5.1,2F5.1,F5.1,I1,6I2,2I1,I2,2I3,2I1,F3.0)'
   
   # Running FVS
   
   #> Number of cycles
-  lines[[9]] <- paste0(str_padParam('NUMCYCLE'),
+  lines[[9]] <- paste0(str_padParam('NUMCYCLE', T),
                        str_padParam(ncycles))
   #> Reporting years
-  lines[[10]] <- paste0(str_padParam('CYCLEAT'),
+  lines[[10]] <- paste0(str_padParam('CYCLEAT', T),
                         str_padParam(stand$INV_YEAR+reporting_ints))
   
   # Optional arguments. I'll start these at list[[20]] so there is room for
   #> multiple reporting years
   
   if(!triple){
-    lines[[20]] <- str_padParam('NOTRIPLE')
+    lines[[20]] <- str_padParam('NOTRIPLE', T)
   }
   
   if(!is.null(opt_args$RANN_SEED)){
-    lines[[21]] <- paste0(str_padParam('RANNSEED'),
+    lines[[21]] <- paste0(str_padParam('RANNSEED', T),
                           str_padParam(opt_args$RANNSEED))
   }
   
@@ -257,18 +262,18 @@ write_FVS_keywords <- function(stand, ncycles = 10, reporting_ints,
                           )
   }
   
-  t1 <- sprintf("GROWTH    %10.0f%10.0f%10.0f%10.0f%10.0f",
-                stand$DG_TRANS,stand$DG_MEASURE,
-                stand$HTG_TRANS,stand$HTG_MEASURE,stand$MORT_MEASURE)
-  lines[[23]] <- t1
+  # t1 <- sprintf("GROWTH    %10.0f%10.0f%10.0f%10.0f%10.0f",
+  #               stand$DG_TRANS,stand$DG_MEASURE,
+  #               stand$HTG_TRANS,stand$HTG_MEASURE,stand$MORT_MEASURE)
+  # lines[[23]] <- t1
   
   if(!calibrate){
-    lines[[24]] <- str_padParam('NOCALIB')
-    lines[[25]] <- str_padParam('NOHTDREG')
+    lines[[24]] <- str_padParam('NOCALIB', T)
+    lines[[25]] <- str_padParam('NOHTDREG', T)
   }
   
   if(!add_regen){
-    lines[[26]] <- str_padParam('NOAUTOES')
+    lines[[26]] <- str_padParam('NOAUTOES', T)
   }else{
     lines[[27]] <- str_padParam('ESTAB')
     lines[[28]] <- paste0(str_padParam('RANNSEED'),
@@ -311,8 +316,8 @@ write_FVS_keywords <- function(stand, ncycles = 10, reporting_ints,
   
   
   # End file
-  lines[[50]] <- str_padParam('PROCESS')
-  lines[[51]] <- str_padParam('STOP')
+  lines[[50]] <- str_padParam('PROCESS', T)
+  lines[[51]] <- str_padParam('STOP', T)
   
   out <- unlist(lapply(Filter(Negate(is.null), lines), \(x) sprintf('%80-s', x)))
   write(out, file = key_fileName)
@@ -411,7 +416,8 @@ write.FVSfiles <- function(  trees, stand,
                              triple=FALSE,
                              add_regen=FALSE,
                              customSDImax=NULL,
-                             randomseed=2025){
+                             randomseed=2025,
+                             outdir){
   
   #stand <- standinit
   #trees <- treeinit
@@ -420,10 +426,10 @@ write.FVSfiles <- function(  trees, stand,
   stand$ASPECT <- ifelse( is.na(stand$ASPECT),  0, stand$ASPECT )        # aspect degrees
   stand$SLOPE <- ifelse( is.na(stand$SLOPE),    5, stand$SLOPE )         # slope percent
   stand$ELEVFT <- ifelse( is.na(stand$ELEVFT ), 38, stand$ELEVFT/100 ) # elevation
-  stand$FOREST <- ifelse( is.na(stand$FOREST),  18, stand$FOREST ) 
+  stand$FOREST <- ifelse( is.na(stand$FOREST),  118, as.numeric(paste0('1',stand$FOREST ))) 
   
   ### generate file names
-  filename <- tempfile()
+  filename <- tempfile(tmpdir = outdir)
   keyfilename <- paste0( filename, ".key")
   treefilename <- paste0( filename, ".tre")
   
@@ -581,7 +587,13 @@ write.fvs.tree.file <- function( tl, std, treefilename )
 # function for getting tree lists from FVS
 fetchTrees <- function(){
   tree_list <- fvsGetTreeAttrs(c("id","plot","age","species","dbh","ht","cratio","tpa","mcuft","bdft"))
-  tree_list$year <- fvsGetEventMonitorVariables("year")
+  # tree_list$year <- fvsGetEventMonitorVariables("year")
   tree_list
 }
 
+fetchTreesWiki <- function (captureYears)
+{
+  curYear <- fvsGetEventMonitorVariables("year")
+  if (is.na(match(curYear,captureYears))) NULL else
+    fvsGetTreeAttrs(c("dbh","ht","species"))
+}

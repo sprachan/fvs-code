@@ -160,25 +160,31 @@ dt <- paste0(format(Sys.Date(), '%b%d%Y'), '_', format(Sys.time(), '%H.%M'), col
 outdir <- file.path(fvs_runs, dt)
 dir.create(outdir)
 filenames <- rep(NA, nrow(t0_stands))
+
+# projection parameters
+num_years <- 11 # number of years into the future to project
+use_tripling <- FALSE
+use_calibration <- FALSE
+use_regenmodel <- FALSE
+
 for(i in 1:1){
-  st <- t0_stands[i,]
+  st <- t0_stands[i,] |> select(-PID)
   tr <- t0_trees[t0_trees$STAND_CN == st$STAND_CN,]
-  head(st)
-  head(tr)
-  nrow(tr)
+
   rFVS::fvsLoad("FVSie", fvs_bin)
-  filenames[i] <- write_FVS_files(trees = tr, stand = st,
-                            ncycles = 10,
-                            reporting_ints = c(10, 20),
-                            calibrate = FALSE, triple = FALSE, add_regen = FALSE,
-                            STDIDENT = paste0('UNCALST',i),
-                            out_dir = outdir)
+  filename <- write.FVSfiles(trees=tr,
+                             stand=st,
+                             years_out=num_years,
+                             calibrate=use_calibration,
+                             triple=use_tripling,
+                             add_regen=use_regenmodel,
+                             outdir = outdir)
   
     # grow the stand
-  fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
+  fvsSetCmdLine(paste0("--keywordfile=",filename,".key"))
   
   # get grown tree list
-  fvs_output <- fvsInteractRun(AfterEM1="fetch_trees()",
+  fvs_output <- fvsInteractRun(AfterEM1="fetchTrees()",
                                SimEnd=fvsGetSummary) 
   names(fvs_output)
   
