@@ -566,9 +566,16 @@ write.fvs.tree.file <- function( tl, std, treefilename )
   
   
   for (var in 1:nrow(fvs_formats)){ #fvs_formats$tree_var){
-    tl[,fvs_formats$tree_var[var]] <- ifelse(is.na(tl[,fvs_formats$tree_var[var]]),
-                                             paste(rep(" ",substring(fvs_formats$format[var],2,2)),collapse=""),
-                                             sprintf(fvs_formats$format[var],tl[,fvs_formats$tree_var[var]]))
+    if(fvs_formats$tree_var[var] == 'TREE_COUNT'){
+      dec <- 4-nchar(tl$TREE_COUNT) # get number of 0s to put after decimal
+      tl$TREE_COUNT <- ifelse(is.na(tl$TREE_COUNT),
+                              paste(rep(' ', substring(fvs_formats$format[var],2,2)), collapse = ''),
+                              sprintf(paste0('%8.', dec, 'f'), tl$TREE_COUNT))
+    }else{
+      tl[,fvs_formats$tree_var[var]] <- ifelse(is.na(tl[,fvs_formats$tree_var[var]]),
+                                               paste(rep(" ",substring(fvs_formats$format[var],2,2)),collapse=""),
+                                               sprintf(fvs_formats$format[var],tl[,fvs_formats$tree_var[var]]))
+    }
   }
   tl$SPECIES <- ifelse(as.numeric(tl$SPECIES)<100,
                        paste("0",as.numeric(tl$SPECIES),sep=""),tl$SPECIES)
