@@ -603,5 +603,5 @@ fetchTreesWiki <- function (captureYears)
 {
   curYear <- fvsGetEventMonitorVariables("year")
   if (is.na(match(curYear,captureYears))) NULL else
-    fvsGetTreeAttrs(c("dbh","ht","species"))
+    fvsGetTreeAttrs(c("dbh","ht","species", 'id', "plot", "tpa"))
 }

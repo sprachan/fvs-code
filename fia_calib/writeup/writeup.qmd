@@ -146,8 +146,14 @@ This is a total of `{r} nrow(t0_stands)` stands. Now we need to get the associat
 
 ```{r}
 t0_trees <- filter(treeInitIE, STAND_CN %in% t0_stands$STAND_CN) |>
-  clean_FIA_treeList(standinfo = standInitIE) |>
-  as.data.frame()
+  clean_FIA_treeList(standinfo = standInitIE)
+
+# exclude <- summarize(t0_trees, .by = PID, 
+#                      seedlings = sum(DIAMETER == 0.1)) |>
+#   filter(seedlings >= 5)
+# 
+# t0_trees <- t0_trees[t0_trees$PID %in% exclude$PID,]
+# t0_stands <- filter(t0_stands, STAND_CN %in% t0_trees$STAND_CN)
 ```
 
 This gives us a total of `{r} nrow(t0_trees)` trees.
@@ -174,8 +180,9 @@ uncalib_proj$summary <- NULL
 
 for(i in 1:3){
   st <- t0_stands[i,] 
-  tr <- t0_trees[t0_trees$STAND_CN == st$STAND_CN,]
-
+  tr <- t0_trees[t0_trees$STAND_CN == st$STAND_CN,] |>
+    as.data.frame()
+  tr$fvs.TREE_ID <- 1:nrow(tr)
   rFVS::fvsLoad("FVSie", fvs_bin)
   filenames[i] <- write.FVSfiles(trees=tr,
                              stand=st,
@@ -189,8 +196,9 @@ for(i in 1:3){
     # grow the stand
   fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
   
+  y <- c(st$INV_YEAR, st$INV_YEAR+10)
   # get grown tree list
-  fvs_output <- fvsInteractRun(AfterEM1="fetchTrees()",
+  fvs_output <- fvsInteractRun(AfterEM1='fetchTrees()',
                                SimEnd=fvsGetSummary) 
   names(fvs_output)
   
@@ -216,6 +224,8 @@ for(i in 1:3){
   rFVS::fvsLoad("FVSie", fvs_bin)
 }
 ```
+
+--\> the problem is with fetchTrees() in that year...
 
 Let's check our outputs:
 
