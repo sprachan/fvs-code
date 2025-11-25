@@ -185,52 +185,52 @@ use_regenmodel <- FALSE
 uncalib_proj <- list()
 uncalib_proj$treelist <- NULL
 uncalib_proj$summary <- NULL
-
-for(i in 1:3){
-  st <- t0_stands[i,] 
-  tr <- t0_trees[t0_trees$STAND_CN == st$STAND_CN,] |>
-    as.data.frame()
-  tr$fvs.TREE_ID <- 1:nrow(tr)
-  rFVS::fvsLoad("FVSie", fvs_bin)
-  filenames[i] <- write.FVSfiles(trees=tr,
-                             stand=st,
-                             years_out=num_years,
-                             calibrate=use_calibration,
-                             triple=use_tripling,
-                             add_regen=use_regenmodel,
-                             outdir = outdir,
-                             STDIDENT = paste0('UNCALBST', i))
-  
-    # grow the stand
-  fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
-  
-  y <- c(st$INV_YEAR, st$INV_YEAR+10)
-  # get grown tree list
-  fvs_output <- fvsInteractRun(AfterEM1='fetchTrees()',
-                               SimEnd=fvsGetSummary) 
-  names(fvs_output)
-  
-  # 2007 tree list in element 1, just to check
-  tl1 <- fvs_output[[1]]$AfterEM1 |>
-    dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
-                     by = dplyr::join_by(id == fvs.TREE_ID))
-  nrow(tl1)
-  # 2017 tree list output in element 2. use left_join to match up with TUID
-  tl2 <- fvs_output[[2]]$AfterEM1 |>
-    dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID), 
-                     by = join_by(id == fvs.TREE_ID))
-  nrow(tl2)
-  tl <- rbind(tl1, tl2)
-  nrow(tl)
-  uncalib_proj$treelist <- rbind(uncalib_proj$treelist, tl)
-  
-  # similar with plot summaries
-  uncalib_proj$summary <- rbind(uncalib_proj$summary,
-                                cbind(fvs_output[[length(fvs_output)]],
-                                      data.frame(PID = st$PID)))
-  
-  rFVS::fvsLoad("FVSie", fvs_bin)
-}
+# 
+# for(i in 1:3){
+#   st <- t0_stands[i,] 
+#   tr <- t0_trees[t0_trees$STAND_CN == st$STAND_CN,] |>
+#     as.data.frame()
+#   tr$fvs.TREE_ID <- 1:nrow(tr)
+#   rFVS::fvsLoad("FVSie", fvs_bin)
+#   filenames[i] <- write.FVSfiles(trees=tr,
+#                              stand=st,
+#                              years_out=num_years,
+#                              calibrate=use_calibration,
+#                              triple=use_tripling,
+#                              add_regen=use_regenmodel,
+#                              outdir = outdir,
+#                              STDIDENT = paste0('UNCALBST', i))
+#   
+#     # grow the stand
+#   fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
+#   
+#   y <- c(st$INV_YEAR, st$INV_YEAR+10)
+#   # get grown tree list
+#   fvs_output <- fvsInteractRun(AfterEM1='fetchTrees()',
+#                                SimEnd=fvsGetSummary) 
+#   names(fvs_output)
+#   
+#   # 2007 tree list in element 1, just to check
+#   tl1 <- fvs_output[[1]]$AfterEM1 |>
+#     dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
+#                      by = dplyr::join_by(id == fvs.TREE_ID))
+#   nrow(tl1)
+#   # 2017 tree list output in element 2. use left_join to match up with TUID
+#   tl2 <- fvs_output[[2]]$AfterEM1 |>
+#     dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID), 
+#                      by = join_by(id == fvs.TREE_ID))
+#   nrow(tl2)
+#   tl <- rbind(tl1, tl2)
+#   nrow(tl)
+#   uncalib_proj$treelist <- rbind(uncalib_proj$treelist, tl)
+#   
+#   # similar with plot summaries
+#   uncalib_proj$summary <- rbind(uncalib_proj$summary,
+#                                 cbind(fvs_output[[length(fvs_output)]],
+#                                       data.frame(PID = st$PID)))
+#   
+#   rFVS::fvsLoad("FVSie", fvs_bin)
+# }
 ```
 
 --\> the problem is with fetchTrees() in that year...
@@ -332,3 +332,101 @@ $$
 Where $d_e$ is the prediction error $|\text{predicted - observed}|$.
 
 This test assumes normality, so we need to use log-transformed diameter (see histograms).
+
+## Calibrating: FVS built in self calibration
+
+For self-calibration, we will project from first to second remeasure. FVS will calculate adjustment factors, and we will extract those factors to use when projecting from first measure to first remeasure. We're doing this because there are not many plots that have been remeasured 2x, so want to maximize sample for equivalence testing.
+
+```{r}
+t1_stands <- dplyr::filter(standInitIE, N_REM == 2, REM_CD == 1) |>
+  as.data.frame()
+t2_stands <- dplyr::filter(standInitIE, REM_CD == 2) |>
+  dplyr::arrange(PID) |>
+  as.data.frame()
+nrow(t1_stands)
+nrow(t2_stands) # only 5 plot IDs
+
+plot_rems <- dplyr::left_join(t2_stands,
+                              dplyr::select(t1_stands, PID, INV_YEAR),
+                              by = dplyr::join_by(PID)) |>
+  dplyr::arrange(PID)
+
+# checked by hand and saw that PIDs match up
+t2_stands$REM_INT <- plot_rems$INV_YEAR.x - plot_rems$INV_YEAR.y
+```
+
+Let's get associated trees for time 2:
+
+```{r}
+t2_trees <- filter(treeInitIE, STAND_CN %in% t2_stands$STAND_CN) |>
+  clean_FIA_treeList(standinfo = standInitIE) |>
+  as.data.frame()
+head(t2_trees)
+```
+
+This gives us `{r} nrow(t2_trees)` to use for calibration.
+
+```{r}
+# make directory. Use date and time to help with ID later
+dt <- paste0('sc_', format(Sys.Date(), '%b%d%Y'), '_', format(Sys.time(), '%H.%M'), collapse = '')
+outdir <- file.path(fvs_runs, dt)
+dir.create(outdir)
+filenames <- rep(NA, nrow(t2_stands))
+
+# projection parameters
+num_years <- 11 # number of years into the future to project
+use_tripling <- FALSE
+use_calibration <- TRUE
+use_regenmodel <- FALSE
+
+# FVS will  overwrite each stand, so we need storage
+uncalib_proj <- list()
+uncalib_proj$treelist <- NULL
+uncalib_proj$summary <- NULL
+
+for(i in 1:3){
+  st <- t2_stands[i,] 
+  tr <- t2_trees[t2_trees$STAND_CN == st$STAND_CN,] |>
+    as.data.frame()
+  tr$fvs.TREE_ID <- 1:nrow(tr)
+  rFVS::fvsLoad("FVSie", fvs_bin)
+  filenames[i] <- write.FVSfiles(trees=tr,
+                             stand=st,
+                             years_out=num_years,
+                             calibrate=use_calibration,
+                             triple=use_tripling,
+                             add_regen=use_regenmodel,
+                             outdir = outdir,
+                             STDIDENT = paste0('SELFCALB', i))
+  
+    # grow the stand
+  fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
+  
+  y <- c(st$INV_YEAR, st$INV_YEAR+10)
+  # get grown tree list
+  fvs_output <- fvsInteractRun(AfterEM1='fetchTrees()',
+                               SimEnd=fvsGetSummary) 
+  names(fvs_output)
+  
+  # 2007 tree list in element 1, just to check
+  tl1 <- fvs_output[[1]]$AfterEM1 |>
+    dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
+                     by = dplyr::join_by(id == fvs.TREE_ID))
+  nrow(tl1)
+  # 2017 tree list output in element 2. use left_join to match up with TUID
+  tl2 <- fvs_output[[2]]$AfterEM1 |>
+    dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID), 
+                     by = join_by(id == fvs.TREE_ID))
+  nrow(tl2)
+  tl <- rbind(tl1, tl2)
+  nrow(tl)
+  uncalib_proj$treelist <- rbind(uncalib_proj$treelist, tl)
+  
+  # similar with plot summaries
+  uncalib_proj$summary <- rbind(uncalib_proj$summary,
+                                cbind(fvs_output[[length(fvs_output)]],
+                                      data.frame(PID = st$PID)))
+  
+  rFVS::fvsLoad("FVSie", fvs_bin)
+}
+```

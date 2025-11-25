@@ -527,13 +527,22 @@ write.FVSfiles <- function(  trees, stand,
   } 
   
   ## calibration
-  t1 <- sprintf("GROWTH    %10.0f%10.0f%10.0f%10.0f%10.0f",
-                stand$DG_TRANS,stand$DG_MEASURE,
-                stand$HG_TRANS,stand$HG_MEASURE,stand$MORT_MEASURE)
+
   write(t1, file=keyfilename, append=T )
   if (!calibrate){
     write( "NOCALIB", file=keyfilename, append=T)
     write( "NOHTDREG", file=keyfilename, append=T)
+  }else{
+    # GROWTH keyword:
+    #> field 1: measurement method, diam
+    #> field 2: length of diameter measurement period
+    #> field 3: measurement method, ht
+    #> field 4: length of height growth measurement period
+    #> field 5: length of mortality observation period
+    t1 <- sprintf("GROWTH    %10.0f%10.0f%10.0f%10.0f%10.0f",
+                  stand$DG_TRANS, stand$REM_INT,
+                  stand$HTG_TRANS, stand$REM_INT,
+                  stand$MORT_MEASURE)
   }
   
   # number of cycles 
