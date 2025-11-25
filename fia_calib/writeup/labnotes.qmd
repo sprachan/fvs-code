@@ -5,6 +5,9 @@ editor: visual
 ---
 
 ```{r}
+#| label: preliminaries
+#| collapse: TRUE
+
 # Functions and Directories ----
 source('../00_functions.R')
 
@@ -21,9 +24,11 @@ fvs_ready <- file.path('..', '..', 'data', 'fvs_ready')
 fvs_runs <- file.path('..', '..', 'data', 'fvs_runFiles')
 
 # Packages -----
-library('rFVS', lib.loc = rFVS_dir) # rFVS
+# library('rFVS', lib.loc = rFVS_dir) # rFVS
+library(equivalence)
 library(dplyr)
 library(ggplot2)
+theme_set(theme_bw())
 library(usmap)
 library(terra)
 library(sf)
@@ -35,13 +40,7 @@ head(standInit, 5)
 head(treeInit, 5)
 
 # Species table, for reference
-s <- unique(treeInit$SPECIES)
-conn <- DBI::dbConnect(RSQLite::SQLite(), fia_sql)
-species_tab <- tbl(conn, 'REF_SPECIES') |>
-  filter(SPCD %in% s) |>
-  select(SPCD, COMMON_NAME, SPECIES_SYMBOL) |>
-  collect()
-DBI::dbDisconnect(conn)
+species_tab <- fvs_spcd(fia_sql)
 ```
 
 Let's only work with plots that are meant to be used with the Inland Empire Variant (IE) and in the Northern Rockies and Bitterroot Valley ecoregion:
@@ -72,12 +71,21 @@ stand_locs <- vect(standInitIE, geom = c('LONGITUDE', 'LATITUDE'))
 # FIA documentation tells us that they use NAD83 datum
 crs(stand_locs) <- '+proj=longlat +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +no_defs +type=crs'
 
+missoula_coords <- data.frame(LATITUDE = 46.87215,
+                              LONGITUDE = -113.994) |>
+  terra::vect(geom = c('LONGITUDE', 'LATITUDE'))
+crs(missoula_coords) <- 'epsg:4326' # WGS84
+missoula_coords <- project(missoula_coords, crs(mt_map)) |>
+  st_as_sf()
 stand_locs <- project(stand_locs, crs(mt_map)) |> # project stands to montana
 st_as_sf()
+
 stand_map <- ggplot()+
   geom_sf(data = mt_map)+
   # don't want to plot the same plot on top of itself a bunch of times
-  geom_sf(data = distinct(stand_locs, PID, .keep_all = TRUE), alpha = 0.25)
+  geom_sf(data = distinct(stand_locs, PID, .keep_all = TRUE), alpha = 0.25)+
+  geom_sf(data = missoula_coords, pch = '*', col = 'red', lwd = 5, size = 10)+
+  theme_light()
 stand_map
 ```
 
@@ -237,3 +245,90 @@ saveRDS(uncalib_proj$summary, file = 'uncalib1summary.RData')
 ```
 
 There is an issue in run 2 where FVS is only projecting the trees that had diameter = 0.1...
+
+## Processing uncalibrated runs
+
+Let's load the results of these runs.
+
+```{r}
+# Read in results
+uncalib_tr <- readRDS('uncalib1.RData')
+str(uncalib_tr)
+
+
+```
+
+We can join up FVS projections with FIA data using tree unique ID and year, putting them in a dataframe for comparison:
+
+```{r}
+x <- uncalib_tr |>
+  dplyr::select(age, species, dbh, TUID, year) |>
+  dplyr::rename(fvs_cd = species,
+                fvs_age = age,
+                fvs_dbh = dbh)
+y <- treeInitIE |>
+  dplyr::select(AGE, SPECIES, DIAMETER, TUID, PID, STAND_CN, REM_CD) |>
+  # inventory year isn't in tree list, so we have to grab from stand info
+  dplyr::left_join(dplyr::select(standInit, STAND_CN, INV_YEAR),
+                   by = dplyr::join_by(STAND_CN)) |> 
+  # rename to lowercase for easier typing andn compatibility with x
+  dplyr::rename(fia_age = AGE, fia_cd = SPECIES, fia_dbh = DIAMETER, year = INV_YEAR)
+
+uncalib_comp <- dplyr::left_join(x, y, by = dplyr::join_by(TUID, year)) |>
+  dplyr::left_join(select(species_tab, fia_cd, sp_abb), 
+                   by = dplyr::join_by(fia_cd))
+```
+
+Let's do a sanity check and make sure that everything matches in the inventory year, before FVS has done any projections.
+
+```{r}
+check <- dplyr::filter(uncalib_comp, REM_CD == 0)
+plot(check$fvs_dbh, check$fia_dbh, pch = 20, col = rgb(0, 0, 0, 0.5))
+abline(coef = c(0, 1), col = 'red')
+```
+
+Now, let's graphically compare projected dbh's vs measured dbh. We will only test non-seedlings:
+
+```{r}
+uncalib_test <- dplyr::filter(uncalib_comp, fia_dbh > 0.1)
+
+uncalib_plt <- dplyr::filter(uncalib_test, REM_CD == 1) |>
+  ggplot(aes(x = fia_dbh, y = fvs_dbh))+
+  geom_point(alpha = 0.5)+
+  geom_abline(aes(slope = 1, intercept = 0),
+              linetype = 'dashed',
+              col = 'red',
+              lwd = 1)+
+  labs(x = 'Measured DBH 10 years after initial measurement',
+       y = 'Projected DBH 10 years after initial measurement')
+  
+uncalib_plt
+```
+
+Let's look at the distribution of the remeasured diameters.
+
+```{r}
+hist(uncalib_test$fia_dbh[uncalib_test$REM_CD == 1])
+hist(log(uncalib_test$fia_dbh[uncalib_test$REM_CD == 1]))
+
+hist(uncalib_test$fvs_dbh[uncalib_test$REM_CD == 1])
+hist(log(uncalib_test$fvs_dbh[uncalib_test$REM_CD == 1]))
+```
+
+## Equivalence Testing
+
+I'll follow Cankaya & Radke's approach from their 2025 paper evaluating FVS calibration in Virginia.
+
+Generally, we set the tolerance level $\tau$ a priori. This tolerance level represents how much "wiggle room" we're comfortable having between the observed and predicted DBHs. If this value is very high, we will clearly reject the null hypothesis of dissimilarity in most situations (e.g., if $\tau$ is 20in allowed difference in DBH, we would reject the null and conclude similarity for many models!). But if the value is very small, we may fail to identify meaningful similarity. For example if we choose $\tau$ to be, say, 0.1 in difference in DBH, we would likely conclude that pretty much any model (or even remeasurement on the same day by a different person) is dissimilar.
+
+So in this approach, we find the smallest $\tau$ that will lead to rejection of the null (concluding the models are equivalent), given an allowed type 1 error rate (false positive rate – ie., rate of incorrectly concluding equivalence). This is called the "minimum detectable negligible difference" (MDND). We can compare $\tau_{MDND}$ across different calibration techniques to see which calibration techniques give us the smallest $\tau_{MDND}$ i.e., the smallest of the smallest tolerances. The smaller the tolerance, the closer the alignment.
+
+We calculate $\tau_{MDND}$ as:
+
+$$
+\tau_{MDND} = |\overline{d_e}| - t_{\alpha, \text{df}} * \text{se}(\overline{d_e})
+$$
+
+Where $d_e$ is the prediction error $|\text{predicted - observed}|$.
+
+This test assumes normality, so we need to use log-transformed diameter (see histograms).

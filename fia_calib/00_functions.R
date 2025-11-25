@@ -408,6 +408,26 @@ fetch_trees <- function(){
   return(tree_list)
 }
 
+# Reference functions ----
+
+## FVS species codes
+fvs_spcd <- function(fia_sql = file.path('..', 'data', 'fia', 'SQLite_FIADB_MT.db')){
+  out <- data.frame(fvs_cd = seq(1, 23),
+                    fia_cd = c(119, 73, 202, 017, 263, 242, 108, 93, 19, 
+                               122, 264, 101, 113, 072, 133, 066, 231, 746, 740, 
+                               321, 375, 998, 299))
+  conn <- DBI::dbConnect(RSQLite::SQLite(), fia_sql)
+  species_tab <- dplyr::tbl(conn, 'REF_SPECIES') |>
+    dplyr::filter(SPCD %in% out$fia_cd) |>
+    dplyr::select(SPCD, COMMON_NAME, SPECIES_SYMBOL) |>
+    dplyr::collect()
+  DBI::dbDisconnect(conn)
+  out <- merge(out, species_tab, by.x = 'fia_cd', by.y = 'SPCD') |>
+    dplyr::rename(sp_abb = SPECIES_SYMBOL)
+  return(out)
+}
+
+
 # Dave functions ----
 
 write.FVSfiles <- function(  trees, stand, 
