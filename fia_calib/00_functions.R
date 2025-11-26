@@ -438,6 +438,7 @@ write.FVSfiles <- function(  trees, stand,
                              customSDImax=NULL,
                              randomseed=2025,
                              outdir,
+                             file_prefix = NULL,
                              STDIDENT = 'FVSProjection'){
   
   #stand <- standinit
@@ -447,10 +448,15 @@ write.FVSfiles <- function(  trees, stand,
   stand$ASPECT <- ifelse( is.na(stand$ASPECT),  0, stand$ASPECT )        # aspect degrees
   stand$SLOPE <- ifelse( is.na(stand$SLOPE),    5, stand$SLOPE )         # slope percent
   stand$ELEVFT <- ifelse( is.na(stand$ELEVFT ), 38, stand$ELEVFT/100 ) # elevation
-  stand$FOREST <- ifelse( is.na(stand$FOREST),  118, as.numeric(paste0('1',stand$FOREST ))) 
+  stand$FOREST <- ifelse( is.na(stand$FOREST),  118, stand$FOREST) 
   
   ### generate file names
-  filename <- tempfile(tmpdir = outdir)
+  if(is.null(file_prefix)){
+    filename <- tempfile(tmpdir = outdir)
+  }else{
+    filename <- file.path(outdir, file_prefix)
+  }
+ 
   keyfilename <- paste0( filename, ".key")
   treefilename <- paste0( filename, ".tre")
   
@@ -467,13 +473,13 @@ write.FVSfiles <- function(  trees, stand,
   t1 <- sprintf("RANNSEED  %10.0f",randomseed)
   write(t1, file=keyfilename, append=T )
   
-  t1 <- sprintf("STDINFO   %10.1f%10s%10.1f%10.1f%10.1f%10.0f",   
+  t1 <- sprintf("STDINFO   %10s%10s%10.1f%10.1f%10.1f%10.0f",   
                 stand$FOREST, stand$PV_CODE, stand$AGE, stand$ASPECT, stand$SLOPE, stand$ELEVFT )
   write( t1, file=keyfilename, append=T )   
   
   ### site index (not needed for FVSie)
   t1 <- sprintf("SITECODE  %10s%10i%10i", stand$SITE_SPECIES, as.integer(stand$SITE_INDEX+0.5), 1 )
-  write(t1, file=keyfilename, append=T)
+  # write(t1, file=keyfilename, append=T)
   
   ### tree list output file (with no headers = column 3 = -1)
   t1 <- "TREELIST           0         3         0         0         0         0         0"    
@@ -543,7 +549,30 @@ write.FVSfiles <- function(  trees, stand,
                   stand$DG_TRANS, stand$REM_INT,
                   stand$HTG_TRANS, stand$REM_INT,
                   stand$MORT_MEASURE)
+    write(t1, file = keyfilename, append = T)
+    
+    # Get calibration statistics in DB
+    write('', file = keyfilename, append = T)
+    
+    t1 <- sprintf('DATABASE  ')
+    write(t1, file = keyfilename, append = T)
+    
+    t1 <- sprintf('DSNOut     ')
+    write(t1, file = keyfilename, append = T)
+    t1 <- paste0(stringr::str_pad('FVSOut.db', width = 10, side = 'right'), 
+                 sprintf('%10s%10s', '', ''))
+    write(t1, file = keyfilename, append = T)
+    
+    t1 <- sprintf('CALBSTDB  ')
+    write(t1, file = keyfilename, append = T)
+    t1 <- sprintf('INVSTATS   ')
+    write(t1, file = keyfilename, append = T)
+    
+    t1 <- sprintf('END       ')
+    write(t1, file = keyfilename, append = T)
   }
+  
+  write('', file = keyfilename, append = T)
   
   # number of cycles 
   t1 <- sprintf("NUMCYCLE  %10i", cycles )

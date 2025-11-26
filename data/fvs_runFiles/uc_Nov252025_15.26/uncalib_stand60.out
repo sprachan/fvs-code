@@ -1,0 +1,308 @@
+
+
+     FOREST VEGETATION SIMULATOR     VERSION FS2025.3 -- INLAND EMPIRE EXPANDED                 RV:20250701    11-25-2025  15:26:22
+
+----------------------------------------------------------------------------------------------------------------------------------
+
+                                                OPTIONS SELECTED BY INPUT
+
+KEYWORD FILE NAME: ../../data/fvs_runFiles/uc_Nov252025_15.26/uncalib_stand60
+----------------------------------------------------------------------------------------------------------------------------------
+KEYWORD    PARAMETERS:
+--------   -----------------------------------------------------------------------------------------------------------------------
+
+STDIDENT
+           STAND ID= UNCALBST60                                                                                                
+
+RANNSEED   RANDOM SEED IS:        2025.0
+
+           HABITAT TYPE WILL BE MAPPED TO 260 FOR THIS PROJECTION.
+
+STDINFO    FOREST-LOCATION CODE=     116; HABITAT TYPE=260; AGE=  120; ASPECT AZIMUTH IN DEGREES=  10.; SLOPE=  80.%
+           ELEVATION(100'S FEET)= 52.0; REFERENCE CODE=     
+
+TREELIST   DATE/CYCLE=    0; DATA SET REFERENCE NUMBER =  3.; HEADING SUPPRESSION CODE = 0.
+           (0=WITH HEADING, OTHER VALUES=SUPPRESS HEADING).
+
+TREEFMT 
+          (I4,I4,F8.3,I1,A3,F5.1,F5.1,2F5.1,F5.1,I1,6I2,2I1,I2,2I3,2I1,F3.0)              
+                                                                                          
+
+DESIGN     BASAL AREA FACTOR=   -1.0; INVERSE OF FIXED PLOT AREA=    0.0; BREAK DBH=    0.0
+           NUMBER OF PLOTS=     4; NON-STOCKABLE PLOTS=     0; STAND SAMPLING WEIGHT=     4.00000
+           PROPORTION OF STAND CONSIDERED STOCKABLE=  1.000
+           SEE "OPTIONS SELECTED BY DEFAULT" FOR FINAL DESIGN VALUES.
+
+INVYEAR    INVENTORY YEAR= 2007
+
+CYCLEAT    REQUESTED YEAR FOR A CYCLE =2018
+
+NOTRIPLE
+
+NOAUTOES   TALLIES AND INGROWTH WILL NOT BE ADDED AUTOMATICALLY.
+           STOCKADJ IS SET TO ZERO, AND NO SPROUTING WILL BE SIMULATED.
+
+CYCLEAT    REQUESTED YEAR FOR A CYCLE =2018
+
+NOCALIB    CALIBRATION USING GROWTH DATA FROM TREE RECORDS HAS BEEN SUPPRESSED FOR ALL SPECIES
+
+NOHTDREG   CALIBRATION OF HEIGHT-DIAMETER RELATIONSHIP WILL BE SUPPRESSED FOR ALL SPECIES
+
+
+            
+
+NUMCYCLE   NUMBER OF CYCLES=  2
+
+PROCESS    PROCESS THE STAND.
+----------------------------------------------------------------------------------------------------------------------------------
+
+                                                OPTIONS SELECTED BY DEFAULT
+
+----------------------------------------------------------------------------------------------------------------------------------
+
+DESIGN     BASAL AREA FACTOR=   -1.0; INVERSE OF FIXED PLOT AREA=    0.0; BREAK DBH=    0.0
+           NUMBER OF PLOTS=     4; NON-STOCKABLE PLOTS=     0; STAND SAMPLING WEIGHT=     4.00000
+           PROPORTION OF STAND CONSIDERED STOCKABLE=  1.000
+
+STDINFO    FOREST-LOCATION CODE=     116; HABITAT TYPE=260; AGE=  120; ASPECT AZIMUTH IN DEGREES=  10.; SLOPE=  80.%
+           ELEVATION(100'S FEET)= 52.0;  REFERENCE CODE=     
+
+SPECIES      WP      WL      DF      GF      WH      RC      LP      ES      AF      PP
+SDI MAX     669.    669.    669.    669.    669.    669.    669.    669.    669.    669.
+
+SPECIES      MH      WB      LM      LL      PM      RM      PY      AS      CO      MM
+SDI MAX     669.    669.    669.    669.    669.    669.    669.    669.    669.    669.
+
+SPECIES      PB      OH      OS
+SDI MAX     669.    669.    669.
+
+                                  NATIONAL VOLUME ESTIMATOR LIBRARY EQUATION NUMBERS
+SPECIES CUBIC FOOT BOARD FOOT SPECIES CUBIC FOOT BOARD FOOT SPECIES CUBIC FOOT BOARD FOOT SPECIES CUBIC FOOT BOARD FOOT 
+------- ---------- ---------- ------- ---------- ---------- ------- ---------- ---------- ------- ---------- ---------- 
+  WP    I00FW2W119 I00FW2W119   WL    I00FW2W073 I00FW2W073   DF    I00FW2W202 I00FW2W202   GF    I00FW2W017 I00FW2W017
+  WH    I00FW2W260 I00FW2W260   RC    I00FW2W242 I00FW2W242   LP    I00FW2W108 I00FW2W108   ES    I00FW2W093 I00FW2W093
+  AF    I00FW2W019 I00FW2W019   PP    I00FW2W122 I00FW2W122   MH    I00FW2W260 I00FW2W260   WB    I00FW2W012 I00FW2W012
+  LM    I00FW2W073 I00FW2W073   LL    I00FW2W019 I00FW2W019   PM    102DVEW106 102DVEW106   RM    102DVEW106 102DVEW106
+  PY    616BEHW231 616BEHW231   AS    102DVEW746 102DVEW746   CO    102DVEW740 102DVEW740   MM    200DVEW746 200DVEW746
+  PB    101DVEW375 101DVEW375   OH    200DVEW746 200DVEW746   OS    I00FW2W260 I00FW2W260
+
+SITECODE   SITE INDEX INFORMATION:
+            WP=    0.;  WL=    0.;  DF=    0.;  GF=    0.;  WH=    0.;  RC=    0.;  LP=    0.;  ES=    0.; AF=    0.
+            PP=    0.;  MH=    0.;  WB=    0.;  LM=   35.;  LL=    0.;  PM=   12.;  RM=   10.;  PY=   35.; AS=   50.
+            CO=   62.;  MM=   50.;  PB=   50.;  OH=   62.;  OS=    0.
+           SITE SPECIES=DF CODE=    3
+
+INVENTORY POINT CROSS REFERENCE (FVS SEQUENTIAL POINT NUMBER = POINT NUMBER AS ENTERED IN THE INPUT DATA):
+  1=       1;   2=       2;   3=       3;   4=       4
+----------------------------------------------------------------------------------------------------------------------------------
+
+
+                                                     ACTIVITY SCHEDULE
+
+STAND ID= UNCALBST60                    MGMT ID= NONE                                                                            
+
+----------------------------------------------------------------------------------------------------------------------------------
+
+CYCLE  DATE  EXTENSION  KEYWORD   DATE  PARAMETERS:
+-----  ----  ---------  --------  ----  ------------------------------------------------------------------------------------------
+
+   1   2007
+               BASE     TREELIST  2007       3.0000     0.0000     0.0000
+
+   2   2017
+               BASE     TREELIST  2017       3.0000     0.0000     0.0000
+
+   3   2018
+               BASE     TREELIST  2018       3.0000     0.0000     0.0000
+----------------------------------------------------------------------------------------------------------------------------------
+
+
+CALIBRATION STATISTICS:
+
+
+                                                 DF    WL    LP
+                                                ----  ----  ----
+
+NUMBER OF RECORDS PER SPECIES                     15     6    12
+
+NUMBER OF RECORDS CODED AS RECENT MORTALITY        0     0     0
+
+NUMBER OF RECORDS WITH MISSING HEIGHTS             1     0     0
+
+NUMBER OF RECORDS WITH BROKEN OR DEAD TOPS         0     0     0
+
+NUMBER OF RECORDS WITH MISSING CROWN RATIOS        1     0     0
+
+NUMBER OF RECORDS AVAILABLE FOR SCALING
+THE DIAMETER INCREMENT MODEL                       0     0     0
+
+RATIO OF STANDARD ERRORS
+(INPUT DBH GROWTH DATA : MODEL)                 1.00  1.00  1.00
+
+WEIGHT GIVEN TO THE INPUT GROWTH DATA WHEN
+DBH GROWTH MODEL SCALE FACTORS WERE COMPUTED    0.00  0.00  0.00
+
+INITIAL SCALE FACTORS FOR THE
+DBH INCREMENT MODEL                             1.00  1.00  1.00
+
+NUMBER OF RECORDS AVAILABLE FOR SCALING
+THE SMALL TREE HEIGHT INCREMENT MODEL             0     0     0
+
+INITIAL SCALE FACTORS FOR THE SMALL TREE
+HEIGHT INCREMENT MODEL                          1.00  1.00  1.00
+
+NUMBER OF RECORDS WITH MISTLETOE                   0     0     0
+
+
+     FOREST VEGETATION SIMULATOR     VERSION FS2025.3 -- INLAND EMPIRE EXPANDED                 RV:20250701    11-25-2025  15:26:22
+
+STAND ID: UNCALBST60                    MGMT ID: NONE     
+
+
+                                        STAND COMPOSITION (BASED ON STOCKABLE AREA)
+--------------------------------------------------------------------------------------------------------------------------
+                            PERCENTILE POINTS IN THE
+                     DISTRIBUTION OF STAND ATTRIBUTES BY DBH      TOTAL/ACRE
+        STAND       -----------------------------------------      OF STAND         DISTRIBUTION OF STAND ATTRIBUTES BY
+YEAR  ATTRIBUTES      10     30     50     70     90    100       ATTRIBUTES       SPECIES AND 3 USER-DEFINED SUBCLASSES
+----  -----------   ------ ------ ------ ------ ------ ------   --------------  ------------------------------------------
+                                 (DBH IN INCHES)
+
+
+
+2007  TREES           4.7    7.4    8.3    9.6   12.9    13.2       6. TREES     57.% DF1,  26.% WL1,  17.% LP1,   0.% ---
+      VOLUME:  
+        TOTAL         7.8    8.7   10.5   12.9   13.1    13.2      71. CUFT      41.% DF1,  37.% WL1,  22.% LP1,   0.% ---
+        MERCH         8.0    8.8   10.5   12.9   13.2    13.2      60. CUFT      40.% DF1,  38.% WL1,  22.% LP1,   0.% ---
+        MERCH         7.8    8.7   10.5   12.9   13.1    13.2     325. BDFT      39.% WL1,  38.% DF1,  22.% LP1,   0.% ---
+
+
+      ACCRETION       7.2    8.1    8.7   10.5   13.1    13.2       2. CUFT/YR   48.% DF1,  29.% WL1,  24.% LP1,   0.% ---
+      MORTALITY       8.0    9.2   12.2   12.5   13.1    13.2       0. CUFT/YR   52.% WL1,  27.% DF1,  21.% LP1,   0.% ---
+
+
+
+2017  TREES           5.2    8.7    9.1   10.7   13.5    14.2       5. TREES     56.% DF1,  26.% WL1,  18.% LP1,   0.% ---
+      VOLUME:  
+        TOTAL         8.5    9.3   10.7   12.9   13.8    14.2      86. CUFT      43.% DF1,  35.% WL1,  22.% LP1,   0.% ---
+        MERCH         8.8    9.6   11.2   12.9   13.8    14.2      73. CUFT      42.% DF1,  35.% WL1,  23.% LP1,   0.% ---
+        MERCH         8.7    9.3   11.2   12.9   13.8    14.2     385. BDFT      43.% DF1,  36.% WL1,  21.% LP1,   0.% ---
+
+
+      ACCRETION       6.1    8.8    9.6   10.7   13.8    14.2       2. CUFT/YR   52.% DF1,  26.% WL1,  22.% LP1,   0.% ---
+      MORTALITY       8.7    9.6   11.2   12.9   13.8    14.2       0. CUFT/YR   46.% WL1,  32.% DF1,  21.% LP1,   0.% ---
+
+
+
+2018  TREES           5.3    8.7    9.2   10.8   13.6    14.3       5. TREES     56.% DF1,  26.% WL1,  18.% LP1,   0.% ---
+      VOLUME:  
+        TOTAL         8.6    9.3   10.8   13.0   13.9    14.3      87. CUFT      43.% DF1,  35.% WL1,  22.% LP1,   0.% ---
+        MERCH         8.9    9.6   10.8   13.0   13.9    14.3      74. CUFT      42.% DF1,  35.% WL1,  22.% LP1,   0.% ---
+        MERCH         8.7    9.3   10.8   13.0   13.9    14.3     391. BDFT      43.% DF1,  36.% WL1,  21.% LP1,   0.% ---
+
+
+      ACCRETION       6.2    8.9    9.6   10.8   13.9    14.3       2. CUFT/YR   49.% DF1,  27.% WL1,  23.% LP1,   0.% ---
+      MORTALITY       8.7    9.3   10.8   13.0   13.9    14.3       0. CUFT/YR   43.% WL1,  30.% DF1,  28.% LP1,   0.% ---
+
+
+
+2027  TREES           5.9    9.6   10.0   11.7   14.4    14.7       5. TREES     57.% DF1,  26.% WL1,  17.% LP1,   0.% ---
+      VOLUME:  
+        TOTAL         9.3   10.0   11.7   13.5   14.6    14.7     100. CUFT      44.% DF1,  33.% WL1,  22.% LP1,   0.% ---
+        MERCH         9.6   10.3   11.7   13.5   14.6    14.7      85. CUFT      42.% DF1,  35.% WL1,  23.% LP1,   0.% ---
+        MERCH         9.6   10.0   11.7   13.5   14.6    14.7     451. BDFT      42.% DF1,  36.% WL1,  21.% LP1,   0.% ---
+
+
+     FOREST VEGETATION SIMULATOR     VERSION FS2025.3 -- INLAND EMPIRE EXPANDED                 RV:20250701    11-25-2025  15:26:22
+
+STAND ID: UNCALBST60                    MGMT ID: NONE     
+
+
+------------------------------------------------------------------------------------------------------------------------------
+                     ATTRIBUTES OF SELECTED SAMPLE TREES                 ADDITIONAL STAND ATTRIBUTES (BASED ON STOCKABLE AREA)
+      -----------------------------------------------------------------  -----------------------------------------------------
+      INITIAL                           LIVE   PAST DBH  BASAL   TREES          QUADRATIC   TREES    BASAL  TOP HEIGHT  CROWN
+      TREES/A            DBH    HEIGHT  CROWN   GROWTH   AREA     PER    STAND   MEAN DBH    PER     AREA     LARGEST   COMP
+YEAR   %TILE  SPECIES (INCHES)  (FEET)  RATIO  (INCHES)  %TILE    ACRE   AGE     (INCHES)    ACRE   (SQFT/A) 40/A (FT)  FACTOR
+----  ------- ------- -------- -------- ------ --------- ------- ------  -----  ---------   ------ --------- --------- -------
+
+2007                                          ( 10 YRS)
+
+        10     DF1       4.70    37.00    15     0.79      1.2    0.25
+        30     WL1       7.40    63.00    25     0.54      9.9    0.25
+        50     WL1       8.30    77.00    35     0.82     27.7    0.25
+        70     LP1       9.60    70.00    35     0.84     49.6    0.25
+        90     WL1      12.90    89.00    45     0.42     81.2    0.25
+       100     DF1      13.20    78.00    35     0.76    100.0    0.25
+                                                                         120       8.9        6.       3.       59.9      2.6
+
+2017                                          ( 10 YRS)
+
+        10     DF1       5.20    49.38    14     0.43      1.2    0.24
+        30     WL1       8.43    73.66    23     0.88      7.8    0.24
+        50     WL1       9.27    84.69    35     0.82     33.6    0.24
+        70     LP1      10.70    74.68    35     1.07     52.4    0.24
+        90     WL1      13.51    92.06    45     0.52     81.5    0.24
+       100     DF1      14.23    82.41    34     0.89    100.0    0.25
+                                                                         130       9.7        5.       3.       67.7      2.9
+
+2018                                          (  1 YRS)
+
+        10     DF1       5.26    51.71    14     0.05      1.3    0.24
+        30     WL1       8.51    74.16    23     0.06      7.8    0.24
+        50     WL1       9.34    85.16    35     0.07     33.8    0.24
+        70     LP1      10.78    75.02    35     0.08     52.6    0.24
+        90     WL1      13.58    92.38    45     0.06     81.6    0.24
+       100     DF1      14.29    82.70    34     0.06    100.0    0.25
+                                                                         131       9.8        5.       3.       68.4      2.9
+
+2027                                          (  9 YRS)
+
+        10     DF1       5.92    65.59    13     0.57      1.5    0.22
+        30     WL1       8.93    78.60    23     0.36      8.6    0.23
+        50     WL1       9.95    89.40    34     0.52     31.3    0.23
+        70     LP1      11.68    78.74    35     0.87     54.8    0.24
+        90     WL1      14.42    96.23    45     0.71     82.5    0.23
+       100     DF1      14.75    84.75    34     0.39    100.0    0.24
+                                                                         140      10.5        5.       3.       74.2      3.2
+
+
+     FOREST VEGETATION SIMULATOR     VERSION FS2025.3 -- INLAND EMPIRE EXPANDED                 RV:20250701    11-25-2025  15:26:22
+
+STAND ID: UNCALBST60                    MGMT ID: NONE    
+
+
+
+                                SUMMARY STATISTICS (PER ACRE OR STAND BASED ON TOTAL STAND AREA)
+--------------------------------------------------------------------------------------------------------------------------------------
+               START OF SIMULATION PERIOD                     REMOVALS             AFTER TREATMENT    GROWTH THIS PERIOD
+         --------------------------------------------- ----------------------- ---------------------  ------------------   MAI  ------
+         NO OF              TOP      TOTAL MERCH MERCH NO OF TOTAL MERCH MERCH              TOP  RES  PERIOD ACCRE MORT   MERCH FOR SS
+YEAR AGE TREES  BA  SDI CCF HT  QMD  CU FT CU FT BD FT TREES CU FT CU FT BD FT  BA  SDI CCF HT   QMD  YEARS   PER  YEAR   CU FT TYP ZT
+---- --- ----- --- ---- --- --- ---- ----- ----- ----- ----- ----- ----- ----- --- ---- --- --- ----  ------ ---- -----   ----- ------
+2007 120     6   3    5   3  60  8.9    71    60   325     0     0     0     0   3    5   3  60  8.9      10    2     0     0.5 999 55
+2017 130     5   3    5   3  68  9.7    86    73   385     0     0     0     0   3    5   3  68  9.7       1    2     0     0.6 999 55
+2018 131     5   3    5   3  68  9.8    87    74   391     0     0     0     0   3    5   3  68  9.8       9    2     0     0.6 999 55
+2027 140     5   3    6   3  74 10.5   100    85   451     0     0     0     0   3    6   3  74 10.5       0    0     0     0.6 999 55
+
+
+
+
+                                                     ACTIVITY SUMMARY 
+
+STAND ID= UNCALBST60                    MGMT ID= NONE                                                                            
+
+----------------------------------------------------------------------------------------------------------------------------------
+
+CYCLE  DATE  EXTENSION  KEYWORD   DATE  ACTIVITY DISPOSITION  PARAMETERS:
+-----  ----  ---------  --------  ----  --------------------  --------------------------------------------------------------------
+
+   1   2007
+               BASE     TREELIST  2007  DONE IN 2016               3.0000     0.0000     0.0000
+
+   2   2017
+               BASE     TREELIST  2017  DONE IN 2017               3.0000     0.0000     0.0000
+
+   3   2018
+               BASE     TREELIST  2018  DONE IN 2026               3.0000     0.0000     0.0000
+----------------------------------------------------------------------------------------------------------------------------------
