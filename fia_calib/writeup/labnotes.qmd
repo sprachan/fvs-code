@@ -46,6 +46,7 @@ species_tab <- fvs_spcd(fia_sql)
 Let's only work with plots that are meant to be used with the Inland Empire Variant (IE) and in the Northern Rockies and Bitterroot Valley ecoregion:
 
 ```{r}
+#| label: get-IE-only
 standInitIE <- filter(standInit,
                       VARIANT == 'IE',
                       substr(ECOREGION, 1, 5) == 'M332B')
@@ -57,6 +58,7 @@ This gets us down to `{r} nrow(treeInitIE)` tree observations from `{r} nrow(sta
 Somewhat infuriatingly, the tree table does not have measurement year/inventory year. We will have to add this as a column using information in standInitIE:
 
 ```{r}
+#| label: IE-trees
 treeInitIE <- treeInit[treeInit$STAND_CN %in% standInitIE$STAND_CN,] |>
   left_join(select(standInitIE, STAND_CN, INV_YEAR), by = join_by(STAND_CN))
 ```
@@ -66,6 +68,7 @@ treeInitIE <- treeInit[treeInit$STAND_CN %in% standInitIE$STAND_CN,] |>
 First, let's take a look at where these plots are in the state:
 
 ```{r}
+#| label: map-plots
 mt_map <- us_map(regions = 'county', include = 'Montana') # state outline
 stand_locs <- vect(standInitIE, geom = c('LONGITUDE', 'LATITUDE')) 
 # FIA documentation tells us that they use NAD83 datum
@@ -92,6 +95,8 @@ stand_map
 Now, we want to create a column REM_CD that tells us whether this is the plot's first measure (REM_CD = 0), first remeasure (REM_CD = 1), or second remeasure (REM_CD = 2).
 
 ```{r}
+#| label: rem-code
+
 standInitIE <- standInitIE |>
   arrange(PID, INV_YEAR) |>
   group_by(PID) |>
@@ -111,6 +116,8 @@ standInitIE <- standInitIE |>
 Let's see what our breakdown of remeasured plots looks like.
 
 ```{r}
+#| label: plot-remeasures
+
 rem_plot <- standInitIE |>
   count(REM_CD) |>
   ggplot(aes(x = REM_CD, y = n))+
@@ -123,6 +130,8 @@ rem_plot
 So there are a good number of plots that have been remeasured once (REM_CD = 1), but very few that have been remeasured twice (REM_CD = 2). Let's see how many trees this corresponds with.
 
 ```{r}
+#| label: plot-rem-trees
+
 # First, need to associate tree records with REM_CDs
 treeInitIE <- select(standInitIE, STAND_CN, REM_CD) |>
   right_join(treeInitIE, by = join_by(STAND_CN))
@@ -143,36 +152,28 @@ To test the efficacy of FIA calibration, we will test FVS predictions from initi
 2.  Self calibration using growth data from first -\> second remeasurement.
 3.  Calibration using OLS regression.
 
-## Get uncalibrated predictions
+## FVS Projections
+
+### Uncalibrated Projections
 
 Now, we need to access all stands that were measured twice, and access their information from the first remeasurement. This will be our set of initial stands to project.
 
 ```{r}
+#| label: t0-stands-trees
 t0_stands <- filter(standInitIE, N_REM == 1, REM_CD == 0) |>
   select(-N_REM, -REM_CD) |>
   as.data.frame()
 
-```
-
-This is a total of `{r} nrow(t0_stands)` stands. Now we need to get the associated trees:
-
-```{r}
 t0_trees <- filter(treeInitIE, STAND_CN %in% t0_stands$STAND_CN) |>
   clean_FIA_treeList(standinfo = standInitIE)
-
-# exclude <- summarize(t0_trees, .by = PID, 
-#                      seedlings = sum(DIAMETER == 0.1)) |>
-#   filter(seedlings >= 5)
-# 
-# t0_trees <- t0_trees[t0_trees$PID %in% exclude$PID,]
-# t0_stands <- filter(t0_stands, STAND_CN %in% t0_trees$STAND_CN)
 ```
 
-This gives us a total of `{r} nrow(t0_trees)` trees.
+This is a total of `{r} nrow(t0_stands)` stands and a total of `{r} nrow(t0_trees)` trees.
 
 We'll make a directory to save keyword, tree, and output files.
 
 ```{r}
+#| label: uncalibrated-projections
 # # make directory. Use date and time to help with ID later
 # dt <- paste0('uc_', format(Sys.Date(), '%b%d%Y'), '_', format(Sys.time(), '%H.%M'), collapse = '')
 # outdir <- file.path(fvs_runs, dt)
@@ -249,102 +250,19 @@ We'll make a directory to save keyword, tree, and output files.
 Let's check our outputs:
 
 ```{r}
+#| label: check-uncalib-out
 # names(fvs_output)
 # 
 # saveRDS(uncalib_proj$treelist, file = file.path('..', '..', 'data', 'sim_outputs', 'uncalib.RData'))
 # saveRDS(uncalib_proj$summary, file = file.path('..', '..', 'data', 'sim_outputs', 'uncalibsummary.RData'))
 ```
 
-## Processing uncalibrated runs
-
-Let's load the results of these runs.
-
-```{r}
-# Read in results
-uncalib_tr <- readRDS(file.path('..', '..', 'data', 'sim_outputs', 'uncalib.RData'))
-str(uncalib_tr)
-```
-
-We can join up FVS projections with FIA data using tree unique ID and year, putting them in a dataframe for comparison:
-
-```{r}
-x <- uncalib_tr |>
-  dplyr::select(age, species, dbh, TUID, year) |>
-  dplyr::rename(fvs_cd = species,
-                fvs_age = age,
-                fvs_dbh = dbh)
-y <- treeInitIE |>
-  dplyr::select(AGE, SPECIES, DIAMETER, TUID, PID, STAND_CN, REM_CD) |>
-  # inventory year isn't in tree list, so we have to grab from stand info
-  dplyr::left_join(dplyr::select(standInit, STAND_CN, INV_YEAR),
-                   by = dplyr::join_by(STAND_CN)) |> 
-  # rename to lowercase for easier typing andn compatibility with x
-  dplyr::rename(fia_age = AGE, fia_cd = SPECIES, fia_dbh = DIAMETER, year = INV_YEAR)
-
-uncalib_comp <- dplyr::left_join(x, y, by = dplyr::join_by(TUID, year)) |>
-  dplyr::left_join(select(species_tab, fia_cd, sp_abb), 
-                   by = dplyr::join_by(fia_cd))
-```
-
-Let's do a sanity check and make sure that everything matches in the inventory year, before FVS has done any projections.
-
-```{r}
-check <- dplyr::filter(uncalib_comp, REM_CD == 0)
-plot(check$fvs_dbh, check$fia_dbh, pch = 20, col = rgb(0, 0, 0, 0.5))
-abline(coef = c(0, 1), col = 'red')
-```
-
-Now, let's graphically compare projected dbh's vs measured dbh. We will only test non-seedlings:
-
-```{r}
-uncalib_test <- dplyr::filter(uncalib_comp, fia_dbh > 0.1)
-
-uncalib_plt <- dplyr::filter(uncalib_test, REM_CD == 1) |>
-  ggplot(aes(x = fia_dbh, y = fvs_dbh))+
-  geom_point(alpha = 0.5)+
-  geom_abline(aes(slope = 1, intercept = 0),
-              linetype = 'dashed',
-              col = 'red',
-              lwd = 1)+
-  labs(x = 'Measured DBH 10 years after initial measurement',
-       y = 'Projected DBH 10 years after initial measurement')
-  
-uncalib_plt
-```
-
-Let's look at the distribution of the remeasured diameters.
-
-```{r}
-hist(uncalib_test$fia_dbh[uncalib_test$REM_CD == 1])
-hist(log(uncalib_test$fia_dbh[uncalib_test$REM_CD == 1]))
-
-hist(uncalib_test$fvs_dbh[uncalib_test$REM_CD == 1])
-hist(log(uncalib_test$fvs_dbh[uncalib_test$REM_CD == 1]))
-```
-
-## Equivalence Testing
-
-I'll follow Cankaya & Radke's approach from their 2025 paper evaluating FVS calibration in Virginia.
-
-Generally, we set the tolerance level $\tau$ a priori. This tolerance level represents how much "wiggle room" we're comfortable having between the observed and predicted DBHs. If this value is very high, we will clearly reject the null hypothesis of dissimilarity in most situations (e.g., if $\tau$ is 20in allowed difference in DBH, we would reject the null and conclude similarity for many models!). But if the value is very small, we may fail to identify meaningful similarity. For example if we choose $\tau$ to be, say, 0.1 in difference in DBH, we would likely conclude that pretty much any model (or even remeasurement on the same day by a different person) is dissimilar.
-
-So in this approach, we find the smallest $\tau$ that will lead to rejection of the null (concluding the models are equivalent), given an allowed type 1 error rate (false positive rate – ie., rate of incorrectly concluding equivalence). This is called the "minimum detectable negligible difference" (MDND). We can compare $\tau_{MDND}$ across different calibration techniques to see which calibration techniques give us the smallest $\tau_{MDND}$ i.e., the smallest of the smallest tolerances. The smaller the tolerance, the closer the alignment.
-
-We calculate $\tau_{MDND}$ as:
-
-$$
-\tau_{MDND} = |\overline{d_e}| - t_{\alpha, \text{df}} * \text{se}(\overline{d_e})
-$$
-
-Where $d_e$ is the prediction error $|\text{predicted - observed}|$.
-
-This test assumes normality, so we need to use log-transformed diameter (see histograms).
-
-## Calibrating: FVS built in self calibration
+### Self-calibrated with 2x remeasured plots
 
 For self-calibration, we will project from first to second remeasure. FVS will calculate adjustment factors, and we will extract those factors to use when projecting from first measure to first remeasure. We're doing this because there are not many plots that have been remeasured 2x, so want to maximize sample for equivalence testing.
 
 ```{r}
+#| label: t1-t2-stands-trees
 t1_stands <- dplyr::filter(standInitIE, N_REM == 2, REM_CD == 1) |>
   as.data.frame()
 t2_stands <- dplyr::filter(standInitIE, REM_CD == 2) |>
@@ -361,11 +279,7 @@ plot_rems <- dplyr::left_join(t2_stands,
 
 # checked by hand and saw that PIDs match up
 t2_stands$REM_INT <- plot_rems$INV_YEAR.x - plot_rems$INV_YEAR.y
-```
 
-Let's get associated trees for time 2:
-
-```{r}
 t2_trees <- filter(treeInitIE, STAND_CN %in% t2_stands$STAND_CN) |>
   clean_FIA_treeList(standinfo = standInitIE) |>
   as.data.frame()
@@ -375,91 +289,185 @@ head(t2_trees)
 This gives us `{r} nrow(t2_trees)` to use for calibration.
 
 ```{r}
+#| label: run-selfcalib-projections
 # make directory. Use date and time to help with ID later
-dt <- paste0('sc_', format(Sys.Date(), '%b%d%Y'), '_', format(Sys.time(), '%H.%M'), collapse = '')
-outdir <- file.path(fvs_runs, dt)
-dir.create(outdir)
-filenames <- rep(NA, nrow(t2_stands))
-
-# projection parameters
-num_years <- 11 # number of years into the future to project
-use_tripling <- FALSE
-use_calibration <- TRUE
-use_regenmodel <- FALSE
-
-# FVS will  overwrite each stand, so we need storage
-selfcalib_proj <- list()
-selfcalib_proj$treelist <- NULL
-selfcalib_proj$summary <- NULL
-
-for(i in 1:nrow(t2_stands)){
-  st <- t2_stands[i,] 
-  tr <- t2_trees[t2_trees$STAND_CN == st$STAND_CN,] |>
-    as.data.frame()
-  if(sum(tr$HISTORY %in% 6:9) == nrow(tr)){
-    cat('Skipping stand ', st$STAND_CN, ' (PID ', st$PID, ') \n', sep = '')
-  }else{
-    tr$fvs.TREE_ID <- 1:nrow(tr)
-    rFVS::fvsLoad("FVSie", fvs_bin)
-    filenames[i] <- write.FVSfiles(trees=tr,
-                                   stand=st,
-                                   years_out=num_years,
-                                   calibrate=use_calibration,
-                                   triple=use_tripling,
-                                   add_regen=use_regenmodel,
-                                   file_prefix = paste0('selfcalib_stand', i),
-                                   outdir = outdir,
-                                   STDIDENT = paste0('SELFCALB', i))
-    
-    # grow the stand
-    fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
-    
-    y <- c(st$INV_YEAR, st$INV_YEAR+10)
-    # get grown tree list
-    fvs_output <- fvsInteractRun(AfterEM1='fetchTrees()',
-                                 SimEnd=fvsGetSummary) 
-    names(fvs_output)
-    
-    # 2007 tree list in element 1, just to check
-    tl1 <- fvs_output[[1]]$AfterEM1 |>
-      dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
-                       by = dplyr::join_by(id == fvs.TREE_ID))
-    nrow(tl1)
-    # 2017 tree list output in element 2. use left_join to match up with TUID
-    tl2 <- fvs_output[[2]]$AfterEM1 |>
-      dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID), 
-                       by = join_by(id == fvs.TREE_ID))
-    nrow(tl2)
-    tl <- rbind(tl1, tl2)
-    nrow(tl)
-  
-    
-    selfcalib_proj$treelist <- rbind(selfcalib_proj$treelist, tl)
-    
-    # similar with plot summaries
-    selfcalib_proj$summary <- rbind(selfcalib_proj$summary,
-                                  cbind(fvs_output[[length(fvs_output)]],
-                                        data.frame(PID = st$PID)))
-    # Get calibration statistics
-    conn <- DBI::dbConnect(RSQLite::SQLite(), 'FVSOut.db')
-    calib <- dplyr::tbl(conn, 'FVS_CalibStats') |>
-      dplyr::collect()
-    
-    DBI::dbDisconnect(conn)
-    
-    selfcalib_proj$calibstats <- rbind(selfcalib_proj$calibstats, calib)
-    remove(conn)
-    list.files()
-    file.remove('FVSOut.db')
-  }
-  
-  
-  rFVS::fvsLoad("FVSie", fvs_bin)
-}
+# dt <- paste0('sc_', format(Sys.Date(), '%b%d%Y'), '_', format(Sys.time(), '%H.%M'), collapse = '')
+# outdir <- file.path(fvs_runs, dt)
+# dir.create(outdir)
+# filenames <- rep(NA, nrow(t2_stands))
+# 
+# # projection parameters
+# num_years <- 11 # number of years into the future to project
+# use_tripling <- FALSE
+# use_calibration <- TRUE
+# use_regenmodel <- FALSE
+# 
+# # FVS will  overwrite each stand, so we need storage
+# selfcalib_proj <- list()
+# selfcalib_proj$treelist <- NULL
+# selfcalib_proj$summary <- NULL
+# 
+# for(i in 1:nrow(t2_stands)){
+#   st <- t2_stands[i,] 
+#   tr <- t2_trees[t2_trees$STAND_CN == st$STAND_CN,] |>
+#     as.data.frame()
+#   if(sum(tr$HISTORY %in% 6:9) == nrow(tr)){
+#     cat('Skipping stand ', st$STAND_CN, ' (PID ', st$PID, ') \n', sep = '')
+#   }else{
+#     tr$fvs.TREE_ID <- 1:nrow(tr)
+#     rFVS::fvsLoad("FVSie", fvs_bin)
+#     filenames[i] <- write.FVSfiles(trees=tr,
+#                                    stand=st,
+#                                    years_out=num_years,
+#                                    calibrate=use_calibration,
+#                                    triple=use_tripling,
+#                                    add_regen=use_regenmodel,
+#                                    file_prefix = paste0('selfcalib_stand', i),
+#                                    outdir = outdir,
+#                                    STDIDENT = paste0('SELFCALB', i))
+#     
+#     # grow the stand
+#     fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
+#     
+#     y <- c(st$INV_YEAR, st$INV_YEAR+10)
+#     # get grown tree list
+#     fvs_output <- fvsInteractRun(AfterEM1='fetchTrees()',
+#                                  SimEnd=fvsGetSummary) 
+#     names(fvs_output)
+#     
+#     # 2007 tree list in element 1, just to check
+#     tl1 <- fvs_output[[1]]$AfterEM1 |>
+#       dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
+#                        by = dplyr::join_by(id == fvs.TREE_ID))
+#     nrow(tl1)
+#     # 2017 tree list output in element 2. use left_join to match up with TUID
+#     tl2 <- fvs_output[[2]]$AfterEM1 |>
+#       dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID), 
+#                        by = join_by(id == fvs.TREE_ID))
+#     nrow(tl2)
+#     tl <- rbind(tl1, tl2)
+#     nrow(tl)
+#   
+#     
+#     selfcalib_proj$treelist <- rbind(selfcalib_proj$treelist, tl)
+#     
+#     # similar with plot summaries
+#     selfcalib_proj$summary <- rbind(selfcalib_proj$summary,
+#                                   cbind(fvs_output[[length(fvs_output)]],
+#                                         data.frame(PID = st$PID)))
+#     # Get calibration statistics
+#     conn <- DBI::dbConnect(RSQLite::SQLite(), 'FVSOut.db')
+#     calib <- dplyr::tbl(conn, 'FVS_CalibStats') |>
+#       dplyr::collect()
+#     
+#     DBI::dbDisconnect(conn)
+#     
+#     selfcalib_proj$calibstats <- rbind(selfcalib_proj$calibstats, calib)
+# saveRDS(selfcalib_proj$treelist,
+#         file = file.path(sim_out, 'selfcalib_trees.RData'))
+# saveRDS(selfcalib_proj$summary, 
+#         file = file.path(sim_out, 'selfcalib_summary.RData'))
+# saveRDS(selfcalib_proj$calibstats,
+#         file = file.path(sim_out, 'selfcalib_calbstat.RData'))#     remove(conn)
+#     list.files()
+#     file.remove('FVSOut.db')
+#   }
+#   
+#   
+#   rFVS::fvsLoad("FVSie", fvs_bin)
+# }
 ```
 
 ```{r}
-saveRDS(selfcalib_proj$treelist,
-        file = file.path('..', '..', 'data', 'sim_outputs', 'selfcalib_trees.RData'))
-
+#| label: save-selfcalb-out
+# saveRDS(selfcalib_proj$treelist,
+#         file = file.path(sim_out, 'selfcalib_trees.RData'))
+# saveRDS(selfcalib_proj$summary, 
+#         file = file.path(sim_out, 'selfcalib_summary.RData'))
+# saveRDS(selfcalib_proj$calibstats,
+#         file = file.path(sim_out, 'selfcalib_calbstat.RData'))
 ```
+
+## Processing uncalibrated runs
+
+Let's load the results of these runs.
+
+```{r}
+#| label: read-uncalib 
+# Read in results 
+uncalib_tr <- readRDS(file.path('..', '..', 'data', 'sim_outputs', 'uncalib.RData')) str(uncalib_tr)
+```
+
+We can join up FVS projections with FIA data using tree unique ID and year, putting them in a dataframe for comparison:
+
+```{r}
+#| label: join-uncalib 
+x <- uncalib_tr |>   
+  dplyr::select(age, species, dbh, TUID, year) |>   
+  dplyr::rename(fvs_cd = species, fvs_age = age, fvs_dbh = dbh) 
+
+y <- treeInitIE |>   
+  dplyr::select(AGE, SPECIES, DIAMETER, TUID, PID, STAND_CN, REM_CD) |>   
+  # inventory year isn't in tree list, so we have to grab from stand info  
+  dplyr::left_join(dplyr::select(standInit, STAND_CN, INV_YEAR),        
+                   by = dplyr::join_by(STAND_CN)) |>    
+  # rename to lowercase for easier typing andn compatibility with x   
+  dplyr::rename(fia_age = AGE, 
+                fia_cd = SPECIES, fia_dbh = DIAMETER, year = INV_YEAR)  
+
+uncalib_comp <- dplyr::left_join(x, y, by = dplyr::join_by(TUID, year)) |>   
+  dplyr::left_join(select(species_tab, fia_cd, sp_abb),                     
+                   by = dplyr::join_by(fia_cd))
+```
+
+Let's do a sanity check and make sure that everything matches in the inventory year, before FVS has done any projections.
+
+```{r}
+#| label: uncalb-sanity-check 
+check <- dplyr::filter(uncalib_comp, REM_CD == 0) 
+plot(check$fvs_dbh, check$fia_dbh, pch = 20, col = rgb(0, 0, 0, 0.5)) 
+abline(coef = c(0, 1), col = 'red')
+```
+
+Now, let's graphically compare projected dbh's vs measured dbh. We will only test non-seedlings:
+
+```{r}
+#| label: plot-uc 
+uncalib_test <- dplyr::filter(uncalib_comp, fia_dbh > 0.1)  
+uncalib_plt <- dplyr::filter(uncalib_test, REM_CD == 1) |>   
+  ggplot(aes(x = fia_dbh, y = fvs_dbh))+   
+  geom_point(alpha = 0.5)+   
+  geom_abline(aes(slope = 1, intercept = 0),               
+              linetype = 'dashed',              
+              col = 'red',               
+              lwd = 1)+   
+  labs(x = 'Measured DBH 10 years after initial measurement',        
+       y = 'Projected DBH 10 years after initial measurement')    
+uncalib_plt
+```
+
+Let's look at the distribution of the remeasured diameters.
+
+```{r}
+#| label: hist-uc 
+hist(uncalib_test$fia_dbh[uncalib_test$REM_CD == 1]) 
+hist(log(uncalib_test$fia_dbh[uncalib_test$REM_CD == 1]))  
+hist(uncalib_test$fvs_dbh[uncalib_test$REM_CD == 1]) 
+hist(log(uncalib_test$fvs_dbh[uncalib_test$REM_CD == 1]))
+```
+
+## Equivalence Testing
+
+I'll follow Cankaya & Radke's approach from their 2025 paper evaluating FVS calibration in Virginia.
+
+Generally, we set the tolerance level $\tau$ a priori. This tolerance level represents how much "wiggle room" we're comfortable having between the observed and predicted DBHs. If this value is very high, we will clearly reject the null hypothesis of dissimilarity in most situations (e.g., if $\tau$ is 20in allowed difference in DBH, we would reject the null and conclude similarity for many models!). But if the value is very small, we may fail to identify meaningful similarity. For example if we choose $\tau$ to be, say, 0.1 in difference in DBH, we would likely conclude that pretty much any model (or even remeasurement on the same day by a different person) is dissimilar.
+
+So in this approach, we find the smallest $\tau$ that will lead to rejection of the null (concluding the models are equivalent), given an allowed type 1 error rate (false positive rate – ie., rate of incorrectly concluding equivalence). This is called the "minimum detectable negligible difference" (MDND). We can compare $\tau_{MDND}$ across different calibration techniques to see which calibration techniques give us the smallest $\tau_{MDND}$ i.e., the smallest of the smallest tolerances. The smaller the tolerance, the closer the alignment.
+
+We calculate $\tau_{MDND}$ as:
+
+$$ \tau_{MDND} = |\overline{d_e}| - t_{\alpha, \text{df}} * \text{se}(\overline{d_e}) $$
+
+Where $d_e$ is the prediction error $|\text{predicted - observed}|$.
+
+This test assumes normality, so we need to use log-transformed diameter (see histograms).
