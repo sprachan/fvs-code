@@ -657,14 +657,111 @@ Visually, it does look like adjusting the multipliers helped! Let's break this d
   theme(legend.position = 'bottom')
 ```
 
-Let's look at the distribution of the remeasured diameters.
+Let's look at the distribution of the remeasured/projected diameters.
 
 ```{r}
-#| label: hist-uc 
-hist(uncalib_test$fia_dbh[uncalib_test$REM_CD == 1]) 
-hist(log(uncalib_test$fia_dbh[uncalib_test$REM_CD == 1]))  
-hist(uncalib_test$fvs_dbh[uncalib_test$REM_CD == 1]) 
-hist(log(uncalib_test$fvs_dbh[uncalib_test$REM_CD == 1]))
+#| label: hist-diams
+hist(uncalib_comp$fia_dbh[uncalib_comp$REM_CD == 1]) 
+hist(log(uncalib_comp$fia_dbh[uncalib_comp$REM_CD == 1]))  
+hist(uncalib_comp$fvs_dbh[uncalib_comp$REM_CD == 1]) 
+hist(log(uncalib_comp$fvs_dbh[uncalib_comp$REM_CD == 1]))
+
+hist(mult_comp$fia_dbh[mult_comp$REM_CD == 1]) 
+hist(log(mult_comp$fia_dbh[mult_comp$REM_CD == 1]))  
+hist(mult_comp$fvs_dbh[mult_comp$REM_CD == 1]) 
+hist(log(mult_comp$fvs_dbh[mult_comp$REM_CD == 1]))
+```
+
+So we should for sure log transform diameter when we formally test whether projections differ from measurements.
+
+## Calculating error measurements
+
+We'll calculate a few general error measurements to summarize our results.
+
+```{r}
+#| label: calc-errors
+uncalib_errors <- uncalib_comp |>
+  dplyr::filter(REM_CD == 1) |>
+  dplyr::summarize(.by = fia_cd,
+                   ME = mean(fvs_dbh-fia_dbh, na.rm = TRUE),
+                   MAE = mean(abs(fvs_dbh-fia_dbh), na.rm = TRUE),
+                   RMSE = sqrt(mean((fvs_dbh-fia_dbh)^2, na.rm = TRUE)))
+
+mult_errors <- mult_comp |>
+   dplyr::filter(REM_CD == 1) |>
+  dplyr::summarize(.by = fia_cd,
+                   ME = mean(fvs_dbh-fia_dbh, na.rm = TRUE),
+                   MAE = mean(abs(fvs_dbh-fia_dbh), na.rm = TRUE),
+                   RMSE = sqrt(mean((fvs_dbh-fia_dbh)^2, na.rm = TRUE)))
+
+error_comp <- full_join(uncalib_errors, mult_errors,
+                        by = dplyr::join_by(fia_cd),
+                        suffix = c('_uc', '_mult')) |>
+  tidyr::pivot_longer(cols = c(ME_uc, ME_mult, RMSE_uc, RMSE_mult,
+                               MAE_uc, MAE_mult),
+                      names_to = 'error_type', values_to = 'error_value')
+```
+
+Now we'll visualize these a few different ways.
+
+```{r}
+#| label: viz-error
+# only split by error type and where it came from
+error_plt <- ggplot(error_comp)+
+  geom_col(aes(x = error_type, y = error_value))
+  #geom_hline(yintercept = 0)
+error_plt
+
+# split by species
+error_spec_plt <- ggplot(error_comp)+
+  geom_col(aes(x = error_type, y = error_value, fill = factor(fia_cd)),
+           position = 'dodge')
+  #geom_hline(yintercept = 0)
+error_spec_plt
+
+
+# just RMSE
+
+rmse_all_plot <- dplyr::filter(error_comp, 
+                               stringr::str_detect(error_type, 'RMSE')) |>
+  ggplot()+
+  geom_col(aes(x = error_type, y = error_value, fill = factor(fia_cd)),
+           position = 'dodge')
+rmse_all_plot
+
+# just mean error
+me_all_plot <- dplyr::filter(error_comp, 
+                             stringr::str_detect(error_type, 'ME')) |>
+  ggplot()+
+  geom_col(aes(x = error_type, y = error_value, fill = factor(fia_cd)),
+           position = 'dodge')
+me_all_plot
+```
+
+It looks like there may be species specific patterns to investigate. Though mult has reduced errors by all metrics, the extent of this reduction appears to vary by species.
+
+### Testing error differences
+
+Let's formally test whether or not there actually are differences in error.
+
+```{r}
+x <- filter(uncalib_comp, REM_CD == 1)
+y <- filter(mult_comp, REM_CD == 1)
+
+error_df <- data.frame(calibration = c(rep('uncalibrated', nrow(x)),
+                                       rep('multiplier', nrow(y))),
+                       species = factor(c(x$fia_cd, y$fia_cd)),
+                       error = c(x$fvs_dbh-x$fia_dbh,
+                                 y$fvs_dbh-y$fia_dbh))
+
+error_hist <- ggplot(error_df)+
+  geom_histogram(aes(x = error), bins = 20, fill = 'grey', color = 'black')+
+  facet_wrap(facets = vars(calibration))
+error_hist
+mean(error_df$error[error_df$calibration == 'multiplier'])
+mean(error_df$error[error_df$calibration == 'uncalibrated'])
+
+
 ```
 
 ## Equivalence Testing
