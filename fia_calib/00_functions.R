@@ -439,11 +439,12 @@ write.FVSfiles <- function(  trees, stand,
                              randomseed=2025,
                              outdir,
                              file_prefix = NULL,
-                             STDIDENT = 'FVSProjection'){
+                             STDIDENT = 'FVSProjection',
+                             ...){
   
   #stand <- standinit
   #trees <- treeinit
-  
+  opt_args <- list(...)
   # Set variant defaults if stuff is missing
   stand$ASPECT <- ifelse( is.na(stand$ASPECT),  0, stand$ASPECT )        # aspect degrees
   stand$SLOPE <- ifelse( is.na(stand$SLOPE),    5, stand$SLOPE )         # slope percent
@@ -570,6 +571,22 @@ write.FVSfiles <- function(  trees, stand,
     
     t1 <- sprintf('END       ')
     write(t1, file = keyfilename, append = T)
+  }
+  
+  if(!is.null(opt_args$READCORD)){
+    t1 <- sprintf('READCORD  ')
+    write(t1, file = keyfilename, append = T)
+    # 23 species --> 3 lines of 8 entries
+    cat(opt_args$READCORD, sep = '', fill = 80, file = keyfilename, append = T)
+    write(' ', file = keyfilename, append = T)
+  }
+  
+  if(!is.null(opt_args$READCORR)){
+    t1 <- sprintf('READCORR  ')
+    write(t1, file = keyfilename, append = T)
+    # 23 species --> 3 lines of 8 entries
+    cat(opt_args$READCORR, sep = '', fill = 80, file = keyfilename, append = T)
+    write(' ', file = keyfilename, append = T)
   }
   
   write('', file = keyfilename, append = T)

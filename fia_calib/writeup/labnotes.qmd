@@ -29,6 +29,7 @@ library(equivalence)
 library(dplyr)
 library(ggplot2)
 theme_set(theme_bw())
+library(patchwork)
 library(usmap)
 library(terra)
 library(sf)
@@ -152,11 +153,45 @@ To test the efficacy of FIA calibration, we will test FVS predictions from initi
 2.  Self calibration using growth data from first -\> second remeasurement.
 3.  Calibration using OLS regression.
 
+Let $D$ represent all FIA data. Let $D_{\text{REM } i}$ denote the set of stands that have been remeasured exactly $i$ times. Then note that:
+
+$$
+A = D_{\text{REM 0}} \subset D \\
+B = D_{\text{REM 1}} \subset D \\
+C = D_{\text{REM 2}} \subset D \\
+A \cup B \cup C = D \\
+A \cap B = \emptyset \\
+B \cap C = \emptyset \\
+A \cap C = \emptyset
+$$
+
+Because each of these subsets are independent, we can use one subset for calibration and the others for testing. In this analysis, I will only consider subsets $B$ and $C$ (because subset $A$ does not have remeasurement data to check predictions against). We will use subset $C$ for calibration (it is the smallest) and subset $B$ for testing.
+
+Consider the set $T_B$ of tree measurements in $B$. By definition of $B$, this is the set of tree measurements in plots that have been remeasured exactly once. Further decompose this set of tree measurements into $T_{B0}, T_{B1}$ where $T_{B0}$ represents the measurements from trees in $B$ during their inventory year, and $T_{B1}$ represents the measurements for trees in $B$ during their first remeasurement. Note that $T_{B0} \cup T_{B1} = T_B$.
+
+Similarly define $T_C$ as the set of tree measurements in $C$. We will do the following:
+
+1.  Use FVS to project $T_{B0}$ forward (remeasurement interval) years, to get $\widehat{T_{B1, \text{uncalib}}}$.
+
+    a\. Assess projection error.
+
+2.  Use a self-calibration strategy, with time independent samples:
+
+    1.  Use FVS to project $T_{C2}$ forward, providing height and diameter increment data. FVS will automatically use increment data to calculate scale factors for diameter and height growth by species.
+
+    2.  Use the scale factors determined above to project $T_{B0}$ forward (remeasurement interval) years to get $\widehat T_{B1, \text{ self-calibrated}}$.
+
+    3.  Assess projection error.
+
+3.  Use a self-calibration strategy, with LOO strategy.
+
+    1.  For every stand in $B_0$, leave that stand out.
+
 ## FVS Projections
 
 ### Uncalibrated Projections
 
-Now, we need to access all stands that were measured twice, and access their information from the first remeasurement. This will be our set of initial stands to project.
+Now, we need to access all stands that were remeasured exactly once, and access their information from the first remeasurement. This is $T_{B0}$.
 
 ```{r}
 #| label: t0-stands-trees
@@ -306,9 +341,10 @@ This gives us `{r} nrow(t2_trees)` to use for calibration.
 # selfcalib_proj <- list()
 # selfcalib_proj$treelist <- NULL
 # selfcalib_proj$summary <- NULL
+# selfcalib_proj$calibstats <- NULL
 # 
 # for(i in 1:nrow(t2_stands)){
-#   st <- t2_stands[i,] 
+#   st <- t2_stands[i,]
 #   tr <- t2_trees[t2_trees$STAND_CN == st$STAND_CN,] |>
 #     as.data.frame()
 #   if(sum(tr$HISTORY %in% 6:9) == nrow(tr)){
@@ -325,16 +361,16 @@ This gives us `{r} nrow(t2_trees)` to use for calibration.
 #                                    file_prefix = paste0('selfcalib_stand', i),
 #                                    outdir = outdir,
 #                                    STDIDENT = paste0('SELFCALB', i))
-#     
+# 
 #     # grow the stand
 #     fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
-#     
+# 
 #     y <- c(st$INV_YEAR, st$INV_YEAR+10)
 #     # get grown tree list
 #     fvs_output <- fvsInteractRun(AfterEM1='fetchTrees()',
-#                                  SimEnd=fvsGetSummary) 
+#                                  SimEnd=fvsGetSummary)
 #     names(fvs_output)
-#     
+# 
 #     # 2007 tree list in element 1, just to check
 #     tl1 <- fvs_output[[1]]$AfterEM1 |>
 #       dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
@@ -342,15 +378,15 @@ This gives us `{r} nrow(t2_trees)` to use for calibration.
 #     nrow(tl1)
 #     # 2017 tree list output in element 2. use left_join to match up with TUID
 #     tl2 <- fvs_output[[2]]$AfterEM1 |>
-#       dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID), 
+#       dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
 #                        by = join_by(id == fvs.TREE_ID))
 #     nrow(tl2)
 #     tl <- rbind(tl1, tl2)
 #     nrow(tl)
-#   
-#     
+# 
+# 
 #     selfcalib_proj$treelist <- rbind(selfcalib_proj$treelist, tl)
-#     
+# 
 #     # similar with plot summaries
 #     selfcalib_proj$summary <- rbind(selfcalib_proj$summary,
 #                                   cbind(fvs_output[[length(fvs_output)]],
@@ -359,21 +395,15 @@ This gives us `{r} nrow(t2_trees)` to use for calibration.
 #     conn <- DBI::dbConnect(RSQLite::SQLite(), 'FVSOut.db')
 #     calib <- dplyr::tbl(conn, 'FVS_CalibStats') |>
 #       dplyr::collect()
-#     
+# 
 #     DBI::dbDisconnect(conn)
-#     
+# 
 #     selfcalib_proj$calibstats <- rbind(selfcalib_proj$calibstats, calib)
-# saveRDS(selfcalib_proj$treelist,
-#         file = file.path(sim_out, 'selfcalib_trees.RData'))
-# saveRDS(selfcalib_proj$summary, 
-#         file = file.path(sim_out, 'selfcalib_summary.RData'))
-# saveRDS(selfcalib_proj$calibstats,
-#         file = file.path(sim_out, 'selfcalib_calbstat.RData'))#     remove(conn)
-#     list.files()
+#     remove(conn)
 #     file.remove('FVSOut.db')
 #   }
-#   
-#   
+# 
+# 
 #   rFVS::fvsLoad("FVSie", fvs_bin)
 # }
 ```
@@ -382,68 +412,249 @@ This gives us `{r} nrow(t2_trees)` to use for calibration.
 #| label: save-selfcalb-out
 # saveRDS(selfcalib_proj$treelist,
 #         file = file.path(sim_out, 'selfcalib_trees.RData'))
-# saveRDS(selfcalib_proj$summary, 
+# saveRDS(selfcalib_proj$summary,
 #         file = file.path(sim_out, 'selfcalib_summary.RData'))
 # saveRDS(selfcalib_proj$calibstats,
 #         file = file.path(sim_out, 'selfcalib_calbstat.RData'))
 ```
 
-## Processing uncalibrated runs
-
-Let's load the results of these runs.
+Now that we have calibration statistics, we will take averages by species and size class to get multipliers for the next run:
 
 ```{r}
-#| label: read-uncalib 
-# Read in results 
-uncalib_tr <- readRDS(file.path('..', '..', 'data', 'sim_outputs', 'uncalib.RData')) str(uncalib_tr)
+calib_stats <- readRDS(file.path(sim_out, 'selfcalib_calbstat.RData'))
+str(calib_stats)
+mults <- dplyr::select(calib_stats, 
+                       TreeSize, 
+                       SpeciesPLANTS, 
+                       SpeciesFIA,
+                       NumTrees, 
+                       ScaleFactor, 
+                       ReadCorMult) |>
+  dplyr::summarize(.by = c(TreeSize, SpeciesPLANTS, SpeciesFIA),
+                   n = sum(NumTrees),
+                   avgScaleFactor = mean(ScaleFactor, na.rm = TRUE),
+                   avgReadCorMult = mean(ReadCorMult, na.rm = TRUE))
 ```
 
-We can join up FVS projections with FIA data using tree unique ID and year, putting them in a dataframe for comparison:
+We need to format these codes according to the IE variant number, or FVS will tweak. We also need to make 2 separate frames: one for large tree diameter growth multipliers, one for small tree height growth multipliers.
 
 ```{r}
-#| label: join-uncalib 
-x <- uncalib_tr |>   
-  dplyr::select(age, species, dbh, TUID, year) |>   
-  dplyr::rename(fvs_cd = species, fvs_age = age, fvs_dbh = dbh) 
 
-y <- treeInitIE |>   
-  dplyr::select(AGE, SPECIES, DIAMETER, TUID, PID, STAND_CN, REM_CD) |>   
-  # inventory year isn't in tree list, so we have to grab from stand info  
-  dplyr::left_join(dplyr::select(standInit, STAND_CN, INV_YEAR),        
-                   by = dplyr::join_by(STAND_CN)) |>    
-  # rename to lowercase for easier typing andn compatibility with x   
-  dplyr::rename(fia_age = AGE, 
-                fia_cd = SPECIES, fia_dbh = DIAMETER, year = INV_YEAR)  
+ltdg_mults <- dplyr::filter(mults, TreeSize == 'LG') |>
+  dplyr::full_join(select(species_tab, fvs_cd, sp_abb),
+                   by = join_by(SpeciesPLANTS == sp_abb)) |>
+  arrange(fvs_cd) |>
+  dplyr::mutate(READCORD = stringr::str_pad(ifelse(is.na(avgReadCorMult),
+                                                   # default multiplier is 1.0
+                                                   '1.00', 
+                                                   round(avgReadCorMult, 2)),
+                                           width = 10,
+                                           pad = ' ',
+                                           side = 'left')
+                )
+ltdg_mults
 
-uncalib_comp <- dplyr::left_join(x, y, by = dplyr::join_by(TUID, year)) |>   
-  dplyr::left_join(select(species_tab, fia_cd, sp_abb),                     
-                   by = dplyr::join_by(fia_cd))
+sthg_mults <- dplyr::filter(mults, TreeSize == 'SM') |>
+  dplyr::full_join(select(species_tab, fvs_cd, sp_abb),
+                   by = join_by(SpeciesPLANTS == sp_abb)) |>
+  arrange(fvs_cd) |>
+  dplyr::mutate(READCORR = stringr::str_pad(ifelse(is.na(avgReadCorMult)|avgReadCorMult == 1,
+                                                   # default multiplier is 1.0
+                                                   '1.00', 
+                                                   round(avgReadCorMult, 2)),
+                                           width = 10,
+                                           pad = ' ',
+                                           side = 'left')
+                )
+sthg_mults
+```
+
+One thing to note is that we do not have growth multipliers for every tree species. For large trees, we have Douglas-fir, Ponderosa Pine, Subalpine Fir, Englemann Spruce, and Lodgepole Pine. For small trees, we have doug fir and subalpine fir.
+
+Now, we're ready to run a new FVS projection with our custom multipliers:
+
+```{r}
+#| label: multipliers-run
+# make directory. Use date and time to help with ID later
+# dt <- paste0('mult_', format(Sys.Date(), '%b%d%Y'), '_', format(Sys.time(), '%H.%M'), collapse = '')
+# outdir <- file.path(fvs_runs, dt)
+# dir.create(outdir)
+# filenames <- rep(NA, nrow(t0_stands))
+# 
+# # projection parameters
+# num_years <- 11 # number of years into the future to project
+# use_tripling <- FALSE
+# use_calibration <- FALSE # calibration OFF. This should be redundant because these trees don't have defined HTG/DG columns.
+# use_regenmodel <- FALSE
+# 
+# # FVS will  overwrite each stand, so we need storage
+# mult_proj <- list()
+# mult_proj$treelist <- NULL
+# mult_proj$summary <- NULL
+# 
+# for(i in 1:nrow(t0_stands)){
+#   st <- t0_stands[i,]
+#   tr <- t0_trees |>
+#     dplyr::filter(STAND_CN == st$STAND_CN,
+#                   SPECIES %in% as.numeric(mults$SpeciesFIA)) |>
+#     as.data.frame()
+#   
+#   if((sum(tr$HISTORY %in% 6:9) == nrow(tr))|(nrow(tr) == 0)){
+#     # warn if there are no live trees to project
+#     cat('Skipping stand ', st$STAND_CN, ' (PID ', st$PID, ') \n', sep = '')
+#   }else{
+#     tr$fvs.TREE_ID <- 1:nrow(tr)
+#     rFVS::fvsLoad("FVSie", fvs_bin)
+#     filenames[i] <- write.FVSfiles(trees=tr,
+#                                    stand=st,
+#                                    years_out=num_years,
+#                                    calibrate=use_calibration,
+#                                    triple=use_tripling,
+#                                    add_regen=use_regenmodel,
+#                                    file_prefix = paste0('mult_stand', i),
+#                                    outdir = outdir,
+#                                    STDIDENT = paste0('MULT', i),
+#                                    READCORD = ltdg_mults$READCORD,
+#                                    READCORR = sthg_mults$READCORR)
+# 
+#     # grow the stand
+#     fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
+# 
+#     y <- c(st$INV_YEAR, st$INV_YEAR+10)
+#     # get grown tree list
+#     fvs_output <- fvsInteractRun(AfterEM1='fetchTrees()',
+#                                  SimEnd=fvsGetSummary)
+#     names(fvs_output)
+# 
+#     # 2007 tree list in element 1, just to check
+#     tl1 <- fvs_output[[1]]$AfterEM1 |>
+#       dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
+#                        by = dplyr::join_by(id == fvs.TREE_ID))
+#     nrow(tl1)
+#     # 2017 tree list output in element 2. use left_join to match up with TUID
+#     tl2 <- fvs_output[[2]]$AfterEM1 |>
+#       dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
+#                        by = join_by(id == fvs.TREE_ID))
+#     nrow(tl2)
+#     tl <- rbind(tl1, tl2)
+#     nrow(tl)
+# 
+# 
+#     mult_proj$treelist <- rbind(mult_proj$treelist, tl)
+# 
+#     # similar with plot summaries
+#     mult_proj$summary <- rbind(mult_proj$summary,
+#                                   cbind(fvs_output[[length(fvs_output)]],
+#                                         data.frame(PID = st$PID)))
+#   }
+# 
+# 
+#   rFVS::fvsLoad("FVSie", fvs_bin)
+# }
+# 
+# saveRDS(mult_proj$treelist, file.path(sim_out, 'mult_trees.RData'))
+# saveRDS(mult_proj$summary, file.path(sim_out, 'mult_summary.RData'))
+```
+
+## Visualizing Model Performance
+
+First, let's load the results of our two projections: the uncalibrated projection from $T_{B0} \rightarrow \widehat{T_{B1, \text{ uncalib}}}$ and the self-calibrated projection from $T_{B0} \rightarrow \widehat{T_{B1, \text{ self calib}}}$. We will join up these predictions with the observed data $T_{B1}$ from the FIA dataset. We'll use tree unique ID (TUID) and year to do that because they uniquely identify observations. We will only look at trees that were not seedlings in the initial inventory year.
+
+```{r}
+#| label: read-results-join
+
+# we had to cut down the number of species we analyzed, so let's make sure this
+#> is reflected:
+
+study_species <- as.numeric(unique(mults$SpeciesFIA))
+
+uncalib_tr <- readRDS(file.path(sim_out, 'uncalib.RData')) |>
+  dplyr::select(age, species, dbh, TUID, year) |>
+  dplyr::rename(fvs_cd = species, fvs_age = age, fvs_dbh = dbh) |>
+  dplyr::left_join(select(species_tab, fvs_cd, fia_cd),
+                   by = join_by(fvs_cd))
+
+mult_tr <- readRDS(file.path(sim_out, 'mult_trees.RData')) |>
+  dplyr::select(age, species, dbh, TUID, year) |>
+  dplyr::rename(fvs_cd = species, fvs_age = age, fvs_dbh = dbh) |>
+  dplyr::left_join(select(species_tab, fvs_cd, fia_cd),
+                   by = join_by(fvs_cd))
+
+# Dataframes that will be joined
+# blondshell reference
+joiner <- treeInitIE |>
+  dplyr::select(AGE, DIAMETER, TUID, PID, STAND_CN, REM_CD) |>
+  # need to get inventory year from stand info
+  dplyr::left_join(dplyr::select(standInit,
+                                 STAND_CN, INV_YEAR),
+                   by = dplyr::join_by(STAND_CN)) |>
+  dplyr::rename(fia_age = AGE, fia_dbh = DIAMETER, year = INV_YEAR)
+
+# one comparison dataframe for each run
+uncalib_comp <- dplyr::left_join(uncalib_tr, joiner, 
+                                 by = dplyr::join_by(TUID, year)) |>
+  dplyr::filter(fia_cd %in% study_species,
+                fia_dbh > 0.1)
+
+mult_comp <- dplyr::left_join(mult_tr, joiner,
+                              by = dplyr::join_by(TUID, year)) |>
+  dplyr::filter(fia_cd %in% study_species,
+                fia_dbh > 0.1)
 ```
 
 Let's do a sanity check and make sure that everything matches in the inventory year, before FVS has done any projections.
 
 ```{r}
-#| label: uncalb-sanity-check 
+#| label: sanity-check 
 check <- dplyr::filter(uncalib_comp, REM_CD == 0) 
-plot(check$fvs_dbh, check$fia_dbh, pch = 20, col = rgb(0, 0, 0, 0.5)) 
+plot(check$fvs_dbh, check$fia_dbh, pch = 20, col = rgb(0, 0, 0, 0.5),
+     main = 'Uncalibrated sanity check') 
+abline(coef = c(0, 1), col = 'red')
+
+check <- dplyr::filter(mult_comp, REM_CD == 0) 
+plot(check$fvs_dbh, check$fia_dbh, pch = 20, col = rgb(0, 0, 0, 0.5),
+     main = 'Adjusted multipliers sanity check') 
 abline(coef = c(0, 1), col = 'red')
 ```
 
-Now, let's graphically compare projected dbh's vs measured dbh. We will only test non-seedlings:
+Both look good.
+
+Now, let's graphically compare projected dbh's vs measured dbh. We will only look at non-seedlings.
 
 ```{r}
 #| label: plot-uc 
-uncalib_test <- dplyr::filter(uncalib_comp, fia_dbh > 0.1)  
-uncalib_plt <- dplyr::filter(uncalib_test, REM_CD == 1) |>   
-  ggplot(aes(x = fia_dbh, y = fvs_dbh))+   
+uncalib_plt <- dplyr::filter(uncalib_comp, REM_CD == 1) |>   
+  ggplot(aes(x = fia_dbh, y = fvs_dbh, color = factor(fia_cd)))+   
   geom_point(alpha = 0.5)+   
   geom_abline(aes(slope = 1, intercept = 0),               
               linetype = 'dashed',              
-              col = 'red',               
+              col = 'black',               
               lwd = 1)+   
   labs(x = 'Measured DBH 10 years after initial measurement',        
-       y = 'Projected DBH 10 years after initial measurement')    
-uncalib_plt
+       y = 'Projected DBH 10 years after initial measurement',
+       title = 'Uncalibrated')    
+
+mult_plt <- dplyr::filter(mult_comp, REM_CD == 1) |>
+  ggplot(aes(x = fia_dbh, y = fvs_dbh, color = factor(fia_cd)))+
+  geom_point(alpha = 0.5)+
+  geom_abline(aes(slope = 1, intercept = 0),
+              linetype = 'dashed',
+              col = 'black',
+              lwd = 1)+
+  labs(x = 'Measured DBH 10 years after initial measurement',
+       y = 'Projected DBH 10 years after initial measurement',
+       title = 'Multiplier Adjusted')
+
+uncalib_plt/mult_plt+plot_layout(guides = 'collect', axes = 'collect')
+```
+
+Visually, it does look like adjusting the multipliers helped! Let's break this down further by species:
+
+```{r}
+(uncalib_plt+facet_wrap(facets = vars(fia_cd), nrow = 1))/
+(mult_plt+facet_wrap(facets = vars(fia_cd), nrow = 1))+
+  plot_layout(guides = 'collect', axes = 'collect')&
+  theme(legend.position = 'bottom')
 ```
 
 Let's look at the distribution of the remeasured diameters.
