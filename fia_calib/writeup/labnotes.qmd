@@ -212,6 +212,8 @@ Similarly define $T_C$ as the set of tree measurements in $C$. We will do the fo
 
 ## FVS Projections
 
+Note – I need to make a function to run FVS projections...
+
 ### Uncalibrated Projections
 
 Now, we need to access all stands that were remeasured exactly once, and access their information from the first remeasurement. This is $T_{B0}$.
@@ -618,12 +620,33 @@ joiner <- treeInitIE |>
 uncalib_comp <- dplyr::left_join(uncalib_tr, joiner, 
                                  by = dplyr::join_by(TUID, year)) |>
   dplyr::filter(fia_cd %in% study_species,
-                fia_dbh > 0.1)
+                fia_dbh > 0.1) |>
+  dplyr::mutate(model = 'uncalibrated',
+                dbh_group = cut(fia_dbh, breaks = c(1, 21, 41),
+                                right = FALSE, include.lowest = TRUE,
+                                labels = FALSE),
+                group_name = dplyr::case_when(dbh_group == 1 ~ 'DBH Group 1',
+                                              dbh_group == 2 ~ 'DBH Group 2',
+                                              .default = NA))
 
 mult_comp <- dplyr::left_join(mult_tr, joiner,
                               by = dplyr::join_by(TUID, year)) |>
   dplyr::filter(fia_cd %in% study_species,
-                fia_dbh > 0.1)
+                fia_dbh > 0.1) |>
+  dplyr::mutate(model = 'multiplier',
+                dbh_group = cut(fia_dbh, breaks = c(1, 21, 41),
+                                right = FALSE, include.lowest = TRUE,
+                                labels = FALSE),
+                group_name = dplyr::case_when(dbh_group == 1 ~ 'DBH Group 1',
+                                              dbh_group == 2 ~ 'DBH Group 2',
+                                              .default = NA))
+
+# overall comparison dataframe
+comp <- rbind(uncalib_comp, mult_comp) |>
+  dplyr::mutate(prediction_err = fvs_dbh-fia_dbh)
+
+# version of comparison dataframe that only includes projection/first remeasurement years
+comp_rem <- dplyr::filter(comp, REM_CD == 1)
 ```
 
 Let's do a sanity check and make sure that everything matches in the inventory year, before FVS has done any projections.
@@ -670,6 +693,23 @@ mult_plt <- dplyr::filter(mult_comp, REM_CD == 1) |>
        title = 'Multiplier Adjusted')
 
 uncalib_plt/mult_plt+plot_layout(guides = 'collect', axes = 'collect')
+
+both_plt <- comp_rem |>
+  mutate(model_clean = case_when(model == 'uncalibrated' ~ 'Uncalibrated',
+                                 model == 'multiplier' ~ 'Multiplier Calibrated'),
+         model_clean = factor(model_clean, levels = c('Uncalibrated',
+                                                      'Multiplier Calibrated'),
+                              ordered = TRUE)) |>
+  ggplot(aes(x = fia_dbh, y = fvs_dbh))+
+  geom_point(alpha = 0.25)+
+  facet_wrap(facets = vars(factor(model_clean)))+
+  geom_abline(aes(intercept = 0, slope = 1), col = 'red')+
+  labs(x = 'FIA remeasured DBH', y = 'FVS projected DBH')+
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14))
+
+both_plt
 ```
 
 Visually, it does look like adjusting the multipliers helped! Let's break this down further by species and see how error varies with diameter:
@@ -782,6 +822,13 @@ me_all_plot <- dplyr::filter(error_comp,
   geom_col(aes(x = error_type, y = error_value, fill = factor(fia_cd)),
            position = 'dodge')
 me_all_plot
+
+# error boxplots
+ggplot(data = comp_rem, aes(x = model, group = model, y = prediction_err))+
+  geom_jitter(alpha = 0.25)+
+  geom_boxplot(outliers = FALSE, fill = NA, color = 'red', box.color = NA, 
+               whisker.color = NA)
+
 ```
 
 It looks like there may be species specific patterns to investigate. Though mult has reduced errors by all metrics, the extent of this reduction appears to vary by species.
@@ -791,29 +838,43 @@ It looks like there may be species specific patterns to investigate. Though mult
 Let's formally test whether or not there actually are differences in error.
 
 ```{r}
-x <- filter(uncalib_comp, REM_CD == 1)
-y <- filter(mult_comp, REM_CD == 1)
 
-error_df <- data.frame(calibration = c(rep('uncalibrated', nrow(x)),
-                                       rep('multiplier', nrow(y))),
-                       species = factor(c(x$fia_cd, y$fia_cd)),
-                       error = c(x$fvs_dbh-x$fia_dbh,
-                                 y$fvs_dbh-y$fia_dbh))
+comp_rem_summ <- comp_rem |>
+  group_by(model) |>
+  summarize(err_mean = mean(prediction_err),
+            n = n(),
+            se = sd(prediction_err)/sqrt(n()))
 
-error_hist <- ggplot(error_df)+
-  geom_histogram(aes(x = error), bins = 20, fill = 'grey', color = 'black')+
-  facet_wrap(facets = vars(calibration))
-error_hist
-mean(error_df$error[error_df$calibration == 'multiplier'])
-mean(error_df$error[error_df$calibration == 'uncalibrated'])
+err_hist <- ggplot()+
+  geom_histogram(data = comp_rem, 
+                 aes(x = prediction_err),
+                 bins = 30, col = 'black', fill = 'lightgrey')+
+  geom_vline(data = comp_rem_summ,
+             aes(xintercept = err_mean), 
+             col = 'red')+
+  geom_vline(xintercept = 0, lty = 'dashed')+
+  facet_wrap(facets = vars(factor(model,
+                                  levels = c('uncalibrated', 'multiplier'),
+                                  labels = c(uncalibrated = 'Uncalibrated',
+                                             multiplier = 'Multiplier'),
+                                  ordered = TRUE)),
+             nrow = 2)+
+  geom_text(data = comp_rem_summ,
+            aes(label = paste('Mean \u00B1 SE = ', 
+                              round(err_mean, 2), 
+                              '\u00B1', 
+                              round(se, 2)),
+                y = 1250, x = 5),
+            size = 5)+
+  labs(x = 'Prediction Error (Predicted - Observed DBH, in)',
+       y = 'Count')+
+  theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        strip.text = element_text(size = 14))
 
-# are means different from each other?
-t.test(error_df$error[error_df$calibration == 'multiplier'], 
-       error_df$error[error_df$calibration == 'uncalibrated'])
+err_hist
 
-# are means different from 0?
-t.test(error_df$error[error_df$calibration == 'uncalibrated'])
-t.test(error_df$error[error_df$calibration == 'multiplier'])
+
 ```
 
 By t-test, means are significantly different from each other. Both means are also greater than 0 by t-test. However, multiplier-adjusted predictions have lower error than uncalibrated.
@@ -942,6 +1003,160 @@ cat('ABLA', abla_mdnd_uc, abla_mdnd_mult, '\n',
     'PSME', psme_mdnd_uc, psme_mdnd_mult)
 ```
 
+### TOST Testing
+
+The FIA field guide for NFI data collection gives defines DBH tolerance as $\pm$ 0.1in per 20in increment for all live trees. We will use this as our guideline for "equivalence", which requires that we break the data up into groups of 20in increment and test these groups separately.
+
+```{r}
+#| label: assign-dbh-group
+# use by = 19 because we start at 1
+#> Groups are: [1, 21), [21, 41]
+comp_rem <- mutate(comp_rem,
+                   tolerance = 0.1*dbh_group) 
+```
+
+To formally test this at the $\alpha = 0.05$ level, we will check to see if the 100\*(1-2$\alpha$)% = 90% confidence interval is contained in the equivalence interval. Under the null hypothesis, it will not.
+
+Let's calculate the 90% CI for mean measurement difference using a bootstrapping approach.
+
+First, we run the bootstrap:
+
+```{r}
+#| label: bootstrap-for-meas-diff
+N <- 1000 # bootstrap replicates
+# storage vectors for mean difference
+bs_diff_uc <- list(group1 = rep(NA, N),
+                   group2 = rep(NA, N)) 
+
+bs_diff_mult <- list(group1 = rep(NA, N),
+                   group2 = rep(NA, N)) 
+
+for(i in 1:N){
+  bs_samp <- comp_rem |>
+    dplyr::group_by(model, dbh_group) |>
+    dplyr::slice_sample(prop = 1, replace = TRUE)
+  bs_means <- bs_samp |>
+    dplyr::summarize(mean_diff = mean(prediction_err)) |>
+    suppressMessages()
+  
+  # store results
+  bs_diff_uc$group1[i] <- bs_means$mean_diff[bs_means$model=='uncalibrated'&
+                                               bs_means$dbh_group==1]
+  bs_diff_uc$group2[i] <- bs_means$mean_diff[bs_means$model=='uncalibrated'&
+                                               bs_means$dbh_group==2]
+  bs_diff_mult$group1[i] <- bs_means$mean_diff[bs_means$model=='multiplier'&
+                                                 bs_means$dbh_group==1]
+  bs_diff_mult$group2[i] <- bs_means$mean_diff[bs_means$model=='multiplier'&
+                                                 bs_means$dbh_group==2]
+}
+
+# dataframe for better plotting
+bs_diffs <- data.frame(mean_diff = c(bs_diff_uc$group1, 
+                                     bs_diff_uc$group2, 
+                                     bs_diff_mult$group1,
+                                     bs_diff_mult$group2),
+                       model = rep(c('uncalibrated', 'multiplier'), each = 2*N),
+                       group = rep(rep(c('1 =< DBH < 20', '20 =< DBH =< 40'), times = 2), 
+                                   each = N))
+```
+
+Next, we visualize the bootstrap results:
+
+```{r}
+hist(bs_diff_uc$group1)
+hist(bs_diff_uc$group2)
+hist(bs_diff_mult$group1)
+hist(bs_diff_mult$group2)
+
+bs_hist_plt <- ggplot(bs_diffs)+
+  geom_histogram(aes(x = mean_diff), fill = 'lightgrey', color = 'black',bins = 20)+
+  facet_wrap(facets = vars(model, group), scales = 'free')
+bs_hist_plt
+```
+
+And now we'll calculate the 90% confidence interval for the difference based on this bootstrap:
+
+```{r}
+uc_cis <- lapply(bs_diff_uc, FUN = \(x) quantile(x, c(0.05, 0.95)))
+
+mult_cis <- lapply(bs_diff_mult, FUN = \(x) quantile(x, c(0.05, 0.95)))
+
+uc_cis
+mult_cis
+
+# for plotting
+tol_ci <- data.frame(model = rep(c('uncalibrated', 'multiplier'), each = 2),
+                     group = rep(c('1 =< DBH < 20', '20 =< DBH =< 40'), times = 2),
+                     tol_low = rep(c(-0.1, -0.2), times = 2),
+                     tol_high = rep(c(0.1, 0.2), times = 2),
+                     ci_low = c(uc_cis$group1[1], 
+                                uc_cis$group2[1], 
+                                mult_cis$group1[1], 
+                                mult_cis$group2[1]),
+                     ci_high = c(uc_cis$group1[2], 
+                                 uc_cis$group2[2], 
+                                 mult_cis$group1[2], 
+                                 mult_cis$group2[2]))
+
+```
+
+Let's layer our empirical confidence intervals and our tolerance intervals on the histograms we see above to visualize if our confidence intervals are contained within tolerance. Unfortunately, because we want shaded regions to be in the background, we have to start from scratch:
+
+```{r}
+ggplot(bs_diffs)+
+  geom_rect(data = tol_ci,
+            aes(xmin = tol_low, xmax = tol_high, ymin = -Inf, ymax = Inf),
+            alpha = 0.5, fill = 'pink')+
+  geom_rect(data = tol_ci,
+           aes(xmin = ci_low, xmax = ci_high, ymin = -Inf, ymax = Inf),
+           alpha = 0.5, fill = 'lightblue')+
+  geom_histogram(aes(x = mean_diff), fill = 'lightgrey', color = 'black',bins = 20)+
+  facet_wrap(facets = vars(model, group), scales = 'free')+
+  labs(x = 'Bootstrap Mean Difference (FVS DBH - Measured DBH, in)',
+       y = 'Count')
+
+uncalib_tost <- filter(bs_diffs, model == 'uncalibrated') |>
+  ggplot()+
+  geom_rect(data = filter(tol_ci, model == 'uncalibrated'),
+            aes(xmin = tol_low, xmax = tol_high, ymin = -Inf, ymax = Inf, fill = 'Equivalence Interval'),
+            alpha = 0.5)+
+  geom_rect(data = filter(tol_ci, model == 'uncalibrated'),
+           aes(xmin = ci_low, xmax = ci_high, ymin = -Inf, ymax = Inf,
+               fill = 'Confidence Interval'),
+           alpha = 0.5)+
+  geom_histogram(aes(x = mean_diff), fill = 'lightgrey', color = 'black',bins = 30)+
+  facet_wrap(facets = vars(group), scales = 'free')+
+  labs(x = 'Bootstrap Mean Difference (FVS DBH - Measured DBH, in)',
+       y = 'Count',
+       fill = '')+
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14))
+  uncalib_tost
+  
+  mult_tost <- filter(bs_diffs, model == 'multiplier') |>
+  ggplot()+
+  geom_rect(data = filter(tol_ci, model == 'multiplier'),
+            aes(xmin = tol_low, xmax = tol_high, ymin = -Inf, ymax = Inf,
+                fill = 'Equivalence Interval'),
+            alpha = 0.5)+
+  geom_rect(data = filter(tol_ci, model == 'multiplier'),
+           aes(xmin = ci_low, xmax = ci_high, ymin = -Inf, ymax = Inf, fill = 'Confidence Interval'),
+           alpha = 0.5)+
+  geom_histogram(aes(x = mean_diff), fill = 'lightgrey', color = 'black',bins = 30)+
+  facet_wrap(facets = vars(group), scales = 'free')+
+  labs(x = 'Bootstrap Mean Difference (FVS DBH - Measured DBH, in)',
+       y = 'Count',
+       fill = '')+
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14))
+mult_tost
+  
+```
+
+Because our confidence intervals are not contained within the equivalence region, there is insufficient evidence to reject the null hypothesis of dissimilarity i.e., we cannot conclude equivalence.
+
 ### Robinson et al approach
 
 This is a regression based approach. We do the following:
@@ -957,10 +1172,8 @@ This is a regression based approach. We do the following:
     1.  For each bootstrap replicate,
         1.  Regress observed values on predicted values.
         2.  Calculate the proportion of times intercept and slope estimates are within the regions of equivalence
-
-    <!-- -->
-
-    1.  Report the above and the quantiles associated with the 95% confidence interval (97.468% is the exact, to correct for the fact that we are jointly testing) for the slope and the intercept.
+        3.  
+    2.  Report the above and the quantiles associated with the 95% confidence interval (97.468% is the exact, to correct for the fact that we are jointly testing) for the slope and the intercept.
 
 5.  If either of the proportions of falling within the region of equivalence are greater than 0.949, reject null hypothesis of dissimilarity at $\alpha$ = 0.05 level.
 
