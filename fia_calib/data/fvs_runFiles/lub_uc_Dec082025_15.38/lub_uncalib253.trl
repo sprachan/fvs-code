@@ -1,0 +1,32 @@
+
+
+     FOREST VEGETATION SIMULATOR     VERSION FS2025.3 -- INLAND EMPIRE EXPANDED                 RV:20250701    12-08-2025  15:39:04
+
+COMPLETE TREE LIST -- STAND: LUBUNC253                   MGMTID: NONE  END CYCLE:  0  CYCLE LENGTH: 10 YRS  YEAR: 2018  PAGE:  1
+  TREE   TREE SP SP TR SS PNT  TREES    MORTAL   CURR  DIAM  CURR  HT     MAX       BA   POINT TOT CU MCH CU  MCH BD MC BF TRC
+ NUMBER  INDX CD NO CL CD NUM PER ACRE PER ACRE  DIAM  INCR   HT  INCR CR  CW  MS %-TILE  BAL  FT VOL FT VOL  FT VOL DF DF  HT
+-------- ---- -- -- -- -- --- -------- -------- ----- ----- ----- ---- -- ---- -- ------ ----- ------ ------ ------- -- -- ---
+       3    1 LP  7  1  0   1    1.000    0.000   5.2  5.04  36.0 39.0 95 10.9  0 100.00     0    2.7    0.0     0.0  0  0   0
+       4    2 LP  7  1  0   1    1.000    0.000   1.4  1.36  15.6  0.0 56  4.2  0   6.76     0    0.1    0.0     0.0  0  0   0
+       2 2999 LP  7  9  0   1    0.000    1.000  14.7  0.00  71.0  0.0 74 18.8  0 100.00     0   37.9   32.4   170.0  0  0   0
+       1 3000 LP  7  9  0   1    0.000    1.000  14.4  0.00  75.0  0.0 39 15.1  0 100.00     2   38.8   34.6   170.0  0  0   0
+
+
+     FOREST VEGETATION SIMULATOR     VERSION FS2025.3 -- INLAND EMPIRE EXPANDED                 RV:20250701    12-08-2025  15:39:04
+
+COMPLETE TREE LIST -- STAND: LUBUNC253                   MGMTID: NONE  END CYCLE:  1  CYCLE LENGTH:  5 YRS  YEAR: 2023  PAGE:  1
+  TREE   TREE SP SP TR SS PNT  TREES    MORTAL   CURR  DIAM  CURR  HT     MAX       BA   POINT TOT CU MCH CU  MCH BD MC BF TRC
+ NUMBER  INDX CD NO CL CD NUM PER ACRE PER ACRE  DIAM  INCR   HT  INCR CR  CW  MS %-TILE  BAL  FT VOL FT VOL  FT VOL DF DF  HT
+-------- ---- -- -- -- -- --- -------- -------- ----- ----- ----- ---- -- ---- -- ------ ----- ------ ------ ------- -- -- ---
+       3    1 LP  7  1  0   1    0.994    0.006   6.6  1.40  42.1  6.1 95 12.6  0 100.00     0    5.0    3.4    20.0  0  0   0
+       4    2 LP  7  1  0   1    0.978    0.022   2.6  1.19  24.6  9.0 56  6.1  0  13.34     0    0.5    0.0     0.0  0  0   0
+
+
+     FOREST VEGETATION SIMULATOR     VERSION FS2025.3 -- INLAND EMPIRE EXPANDED                 RV:20250701    12-08-2025  15:39:04
+
+COMPLETE TREE LIST -- STAND: LUBUNC253                   MGMTID: NONE  END CYCLE:  2  CYCLE LENGTH:  5 YRS  YEAR: 2028  PAGE:  1
+  TREE   TREE SP SP TR SS PNT  TREES    MORTAL   CURR  DIAM  CURR  HT     MAX       BA   POINT TOT CU MCH CU  MCH BD MC BF TRC
+ NUMBER  INDX CD NO CL CD NUM PER ACRE PER ACRE  DIAM  INCR   HT  INCR CR  CW  MS %-TILE  BAL  FT VOL FT VOL  FT VOL DF DF  HT
+-------- ---- -- -- -- -- --- -------- -------- ----- ----- ----- ---- -- ---- -- ------ ----- ------ ------ ------- -- -- ---
+       3    1 LP  7  1  0   1    0.989    0.005   8.0  1.27  47.5  5.4 94 14.0  0 100.00     0    8.0    6.8    30.0  0  0   0
+       4    2 LP  7  1  0   1    0.964    0.014   4.5  1.77  37.5 12.9 56  8.4  0  23.40     0    2.1    0.0     0.0  0  0   0

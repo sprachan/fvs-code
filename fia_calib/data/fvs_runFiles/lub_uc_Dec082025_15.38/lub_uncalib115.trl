@@ -1,0 +1,43 @@
+
+
+     FOREST VEGETATION SIMULATOR     VERSION FS2025.3 -- INLAND EMPIRE EXPANDED                 RV:20250701    12-08-2025  15:39:00
+
+COMPLETE TREE LIST -- STAND: LUBUNC115                   MGMTID: NONE  END CYCLE:  0  CYCLE LENGTH: 10 YRS  YEAR: 2018  PAGE:  1
+  TREE   TREE SP SP TR SS PNT  TREES    MORTAL   CURR  DIAM  CURR  HT     MAX       BA   POINT TOT CU MCH CU  MCH BD MC BF TRC
+ NUMBER  INDX CD NO CL CD NUM PER ACRE PER ACRE  DIAM  INCR   HT  INCR CR  CW  MS %-TILE  BAL  FT VOL FT VOL  FT VOL DF DF  HT
+-------- ---- -- -- -- -- --- -------- -------- ----- ----- ----- ---- -- ---- -- ------ ----- ------ ------ ------- -- -- ---
+       1    1 DF  3  1  0   1    1.000    0.000  12.4 10.75  64.0 64.0 66 19.7  0  62.94     1   19.8   17.0    80.0  0  0   0
+       2    2 DF  3  1  0   1    1.000    0.000  14.5 12.57  66.0 67.0 83 22.8  0 100.00     0   27.2   24.6   120.0  0  0   0
+       5    4 DF  3  1  0   1    1.000    0.000   6.0  0.00  20.0  0.0 68 12.5  0   6.60     3    1.7    0.0     0.0  0  0   0
+       7    6 DF  3  1  0   1    1.000    0.000   1.2  1.04   9.0  0.0 81  5.5  0   0.25     3    0.1    0.0     0.0  0  0   0
+       6    5 PP 10  1  0   1    1.000    0.000  11.0  9.79  63.0 67.0 41 13.3  0  35.84     2   16.9   14.6    70.0  0  0   0
+       4    3 RM 16  1  0   1    1.000    0.000   6.7  5.72  16.0 17.0 66  8.1  0  14.51     3    2.4    0.0     0.0  0  0   0
+       3 3000 PP 10  9  0   1    0.000    1.000   9.1  0.00  57.0  0.0 34 11.4  0  14.51     3   10.6    9.1    50.0  0  0   0
+
+
+     FOREST VEGETATION SIMULATOR     VERSION FS2025.3 -- INLAND EMPIRE EXPANDED                 RV:20250701    12-08-2025  15:39:00
+
+COMPLETE TREE LIST -- STAND: LUBUNC115                   MGMTID: NONE  END CYCLE:  1  CYCLE LENGTH:  5 YRS  YEAR: 2023  PAGE:  1
+  TREE   TREE SP SP TR SS PNT  TREES    MORTAL   CURR  DIAM  CURR  HT     MAX       BA   POINT TOT CU MCH CU  MCH BD MC BF TRC
+ NUMBER  INDX CD NO CL CD NUM PER ACRE PER ACRE  DIAM  INCR   HT  INCR CR  CW  MS %-TILE  BAL  FT VOL FT VOL  FT VOL DF DF  HT
+-------- ---- -- -- -- -- --- -------- -------- ----- ----- ----- ---- -- ---- -- ------ ----- ------ ------ ------- -- -- ---
+       1    1 DF  3  1  0   1    0.995    0.005  13.4  0.91  68.4  4.4 65 20.5  0  64.37     1   24.6   21.9   110.0  0  0   0
+       2    2 DF  3  1  0   1    0.997    0.003  15.8  1.12  71.0  5.0 82 23.7  0 100.00     0   34.4   30.7   150.0  0  0   0
+       5    4 DF  3  1  0   1    0.996    0.004   7.3  1.16  27.4  7.4 69 14.2  0  15.50     3    3.2    1.7    10.0  0  0   0
+       7    6 DF  3  1  0   1    0.993    0.007   2.7  1.27  19.2 10.2 81  8.7  0   1.01     4    0.3    0.0     0.0  0  0   0
+       6    5 PP 10  1  0   1    0.999    0.001  12.7  1.51  73.1 10.1 41 14.5  0  38.59     2   25.8   22.6   120.0  0  0   0
+       4    3 RM 16  1  0   1    1.000    0.000   6.9  0.16  16.1  0.1 64  8.2  0   7.81     4    2.4    0.0     0.0  0  0   0
+
+
+     FOREST VEGETATION SIMULATOR     VERSION FS2025.3 -- INLAND EMPIRE EXPANDED                 RV:20250701    12-08-2025  15:39:00
+
+COMPLETE TREE LIST -- STAND: LUBUNC115                   MGMTID: NONE  END CYCLE:  2  CYCLE LENGTH:  5 YRS  YEAR: 2028  PAGE:  1
+  TREE   TREE SP SP TR SS PNT  TREES    MORTAL   CURR  DIAM  CURR  HT     MAX       BA   POINT TOT CU MCH CU  MCH BD MC BF TRC
+ NUMBER  INDX CD NO CL CD NUM PER ACRE PER ACRE  DIAM  INCR   HT  INCR CR  CW  MS %-TILE  BAL  FT VOL FT VOL  FT VOL DF DF  HT
+-------- ---- -- -- -- -- --- -------- -------- ----- ----- ----- ---- -- ---- -- ------ ----- ------ ------ ------- -- -- ---
+       1    1 DF  3  1  0   1    0.990    0.005  14.9  1.26  74.2  5.8 64 21.6  0  65.95     2   32.4   28.6   140.0  0  0   0
+       2    2 DF  3  1  0   1    0.995    0.002  17.0  1.03  75.5  4.5 81 24.6  0 100.00     0   42.0   40.1   200.0  0  0   0
+       5    4 DF  3  1  0   1    0.993    0.003   8.6  1.13  37.3  9.9 66 15.6  0  16.43     4    5.7    4.2    20.0  0  0   0
+       7    6 DF  3  1  0   1    0.989    0.004   3.9  1.08  26.9  7.7 81 10.9  0   1.80     5    1.0    0.0     0.0  0  0   0
+       6    5 PP 10  1  0   1    0.998    0.001  14.1  1.21  80.6  7.5 41 15.4  0  39.85     3   34.7   31.6   170.0  0  0   0
+       4    3 RM 16  1  0   1    0.982    0.018   7.1  0.16  16.2  0.1 64  8.4  0   7.63     4    2.4    2.4    10.0  0  0   0
