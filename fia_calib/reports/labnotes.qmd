@@ -1,0 +1,1239 @@
+---
+title: "Write Up"
+format: html
+editor: visual
+---
+
+```{r}
+#| label: preliminaries
+#| collapse: TRUE
+
+# Functions and Directories ----
+source('../00_functions.R')
+
+# FVS directories
+fvs_dir <- file.path('C:', 'FVS', 'FVSSoftware')
+fvs_bin <- file.path(fvs_dir, 'FVSbin')
+fvs_rVer <- list.files(file.path(fvs_dir, 'R')) # R version used for naming dirs
+rFVS_dir <- file.path(fvs_dir, 'R', fvs_rVer, 'library') # rFVS location
+
+# Data directories and files
+fia_path <- file.path('..', '..', 'data', 'fia')
+fia_sql <- file.path(fia_path, 'SQLite_FIADB_MT.db')
+fvs_ready <- file.path('..', '..', 'data', 'fvs_ready')
+fvs_runs <- file.path('..', '..', 'data', 'fvs_runFiles')
+sim_out <- file.path('..', '..', 'data', 'sim_outputs')
+# Packages -----
+# library('rFVS', lib.loc = rFVS_dir) # rFVS
+library(dplyr)
+library(ggplot2)
+theme_set(theme_bw())
+library(patchwork)
+library(usmap)
+library(terra)
+library(sf)
+
+# Read in remeasurement data ----
+standInit <- readRDS(file.path(fvs_ready, 'FVSstandInitAll.rds'))
+treeInit <- readRDS(file.path(fvs_ready, 'FVStreeInitAll.rds'))
+head(standInit, 5)
+head(treeInit, 5)
+
+# Species table, for reference
+species_tab <- fvs_spcd(fia_sql)
+```
+
+Let's only work with plots that are meant to be used with the Inland Empire Variant (IE) and in the Northern Rockies and Bitterroot Valley ecoregion:
+
+```{r}
+#| label: get-IE-only
+standInitIE <- filter(standInit,
+                      VARIANT == 'IE',
+                      substr(ECOREGION, 1, 5) == 'M332B')
+
+```
+
+This gets us down to `{r} nrow(treeInitIE)` tree observations from `{r} nrow(standInitIE)` plot observations.
+
+Somewhat infuriatingly, the tree table does not have measurement year/inventory year. We will have to add this as a column using information in standInitIE:
+
+```{r}
+#| label: IE-trees
+treeInitIE <- treeInit[treeInit$STAND_CN %in% standInitIE$STAND_CN,] |>
+  left_join(select(standInitIE, STAND_CN, INV_YEAR), by = join_by(STAND_CN))
+```
+
+## Exploratory Data Analysis
+
+First, let's take a look at where these plots are in the state:
+
+```{r}
+#| label: map-plots
+mt_map <- us_map(regions = 'county', include = 'Montana') # state outline
+stand_locs <- vect(standInitIE, geom = c('LONGITUDE', 'LATITUDE')) 
+# FIA documentation tells us that they use NAD83 datum
+crs(stand_locs) <- '+proj=longlat +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +no_defs +type=crs'
+
+missoula_coords <- data.frame(LATITUDE = 46.87215,
+                              LONGITUDE = -113.994) |>
+  terra::vect(geom = c('LONGITUDE', 'LATITUDE'))
+crs(missoula_coords) <- 'epsg:4326' # WGS84
+missoula_coords <- project(missoula_coords, crs(mt_map)) |>
+  st_as_sf()
+stand_locs <- project(stand_locs, crs(mt_map)) |> # project stands to montana
+st_as_sf()
+
+stand_map <- ggplot()+
+  geom_sf(data = mt_map)+
+  # don't want to plot the same plot on top of itself a bunch of times
+  geom_sf(data = distinct(stand_locs, PID, .keep_all = TRUE), alpha = 0.25)+
+  geom_sf(data = missoula_coords, pch = '*', col = 'red', lwd = 5, size = 10)+
+  theme_light()
+stand_map
+```
+
+Now, we want to create a column REM_CD that tells us whether this is the plot's first measure (REM_CD = 0), first remeasure (REM_CD = 1), or second remeasure (REM_CD = 2).
+
+```{r}
+#| label: rem-code
+
+standInitIE <- standInitIE |>
+  arrange(PID, INV_YEAR) |>
+  group_by(PID) |>
+  mutate(REM_CD = case_when(INV_YEAR == min(INV_YEAR) ~ 0,
+                            n() == 2 ~ 1,
+                            INV_YEAR == max(INV_YEAR) ~ 2,
+                            INV_YEAR != max(INV_YEAR) ~ 1,
+                            .default = NA),
+         N_REM = max(REM_CD),
+         FOREST = stringr::str_pad(FOREST, 
+                                   width = 2, 
+                                   pad = '0', 
+                                   side = 'left')) |>
+  ungroup()
+```
+
+Let's see what our breakdown of remeasured plots looks like.
+
+```{r}
+#| label: plot-remeasures
+
+rem_plot <- standInitIE |>
+  count(REM_CD) |>
+  ggplot(aes(x = REM_CD, y = n))+
+  geom_col()+
+  geom_text(aes(label = n),
+            vjust = -0.5)
+rem_plot
+
+nrem_plot <- standInitIE |>
+  dplyr::group_by(PID) |>
+  dplyr::slice_head(n = 1) |>
+  dplyr::ungroup() |>
+  count(N_REM) |>
+  ggplot(aes(x = N_REM, y = n))+
+  geom_col()+
+  geom_text(aes(label = n),
+            vjust = -0.5)
+  
+nrem_plot
+```
+
+So there are a good number of plots that have been remeasured once (REM_CD = 1), but very few that have been remeasured twice (REM_CD = 2). Let's see how many trees this corresponds with.
+
+```{r}
+#| label: plot-rem-trees
+
+# First, need to associate tree records with REM_CDs
+treeInitIE <- select(standInitIE, STAND_CN, REM_CD, N_REM) |>
+  right_join(treeInitIE, by = join_by(STAND_CN))
+
+# Now plot
+tree_rem_plot <- count(treeInitIE, REM_CD) |>
+  ggplot(aes(x = REM_CD, y = n))+
+  geom_col()+
+  geom_text(aes(label = n), vjust = -0.5)
+tree_rem_plot
+
+tree_nrem_plot <- treeInitIE |>
+  dplyr::group_by(TUID) |>
+  dplyr::slice_head(n = 1) |>
+  dplyr::ungroup() |>
+  count(N_REM) |>
+  ggplot(aes(x = N_REM, y = n))+
+  geom_col()+
+  geom_text(aes(label = n),
+            vjust = -0.5)
+tree_nrem_plot
+```
+
+## Testing Design
+
+To test the efficacy of FIA calibration, we will test FVS predictions from initial measure –\> first remeasure using 3 calibration techniques:
+
+1.  No calibration
+2.  Self calibration using growth data from first -\> second remeasurement.
+3.  Calibration using OLS regression.
+
+Let $D$ represent all FIA data. Let $D_{\text{REM } i}$ denote the set of stands that have been remeasured exactly $i$ times. Then note that:
+
+$$
+A = D_{\text{REM 0}} \subset D \\
+B = D_{\text{REM 1}} \subset D \\
+C = D_{\text{REM 2}} \subset D \\
+A \cup B \cup C = D \\
+A \cap B = \emptyset \\
+B \cap C = \emptyset \\
+A \cap C = \emptyset
+$$
+
+Because each of these subsets are independent, we can use one subset for calibration and the others for testing. In this analysis, I will only consider subsets $B$ and $C$ (because subset $A$ does not have remeasurement data to check predictions against). We will use subset $C$ for calibration (it is the smallest) and subset $B$ for testing.
+
+Consider the set $T_B$ of tree measurements in $B$. By definition of $B$, this is the set of tree measurements in plots that have been remeasured exactly once. Further decompose this set of tree measurements into $T_{B0}, T_{B1}$ where $T_{B0}$ represents the measurements from trees in $B$ during their inventory year, and $T_{B1}$ represents the measurements for trees in $B$ during their first remeasurement. Note that $T_{B0} \cup T_{B1} = T_B$.
+
+Similarly define $T_C$ as the set of tree measurements in $C$. We will do the following:
+
+1.  Use FVS to project $T_{B0}$ forward (remeasurement interval) years, to get $\widehat{T_{B1, \text{uncalib}}}$.
+
+    a\. Assess projection error.
+
+2.  Use a self-calibration strategy, with time independent samples:
+
+    1.  Use FVS to project $T_{C2}$ forward, providing height and diameter increment data. FVS will automatically use increment data to calculate scale factors for diameter and height growth by species.
+
+    2.  Use the scale factors determined above to project $T_{B0}$ forward (remeasurement interval) years to get $\widehat T_{B1, \text{ self-calibrated}}$.
+
+    3.  Assess projection error.
+
+3.  Use a self-calibration strategy, with LOO strategy.
+
+    1.  For every stand in $B_0$, leave that stand out.
+
+## FVS Projections
+
+Note – I need to make a function to run FVS projections...
+
+### Uncalibrated Projections
+
+Now, we need to access all stands that were remeasured exactly once, and access their information from the first remeasurement. This is $T_{B0}$.
+
+```{r}
+#| label: t0-stands-trees
+t0_stands <- filter(standInitIE, N_REM == 1, REM_CD == 0) |>
+  select(-N_REM, -REM_CD) |>
+  as.data.frame()
+
+t0_trees <- filter(treeInitIE, STAND_CN %in% t0_stands$STAND_CN) |>
+  clean_FIA_treeList(standinfo = standInitIE)
+```
+
+This is a total of `{r} nrow(t0_stands)` stands and a total of `{r} nrow(t0_trees)` trees.
+
+We'll make a directory to save keyword, tree, and output files.
+
+```{r}
+#| label: uncalibrated-projections
+# # make directory. Use date and time to help with ID later
+# dt <- paste0('uc_', format(Sys.Date(), '%b%d%Y'), '_', format(Sys.time(), '%H.%M'), collapse = '')
+# outdir <- file.path(fvs_runs, dt)
+# dir.create(outdir)
+# filenames <- rep(NA, nrow(t0_stands))
+# 
+# # projection parameters
+# num_years <- 11 # number of years into the future to project
+# use_tripling <- FALSE
+# use_calibration <- FALSE
+# use_regenmodel <- FALSE
+# 
+# # FVS will  overwrite each stand, so we need storage
+# uncalib_proj <- list()
+# uncalib_proj$treelist <- NULL
+# uncalib_proj$summary <- NULL
+# 
+# for(i in 1:nrow(t0_stands)){
+#   st <- t0_stands[i,]
+#   tr <- t0_trees[t0_trees$STAND_CN == st$STAND_CN,] |>
+#     as.data.frame()
+#   
+#   # check if there are eligible trees to simulate
+#   if(sum(tr$HISTORY %in% 6:9) == nrow(tr)){
+#     cat('Skipping stand ', st$STAND_CN, ' (PID ', st$PID, ') \n', sep = '')
+#   }else{
+#     # run simulation
+#     tr$fvs.TREE_ID <- 1:nrow(tr)
+#     rFVS::fvsLoad("FVSie", fvs_bin)
+#     filenames[i] <- write.FVSfiles(trees=tr,
+#                                    stand=st,
+#                                    years_out=num_years,
+#                                    calibrate=use_calibration,
+#                                    triple=use_tripling,
+#                                    add_regen=use_regenmodel,
+#                                    outdir = outdir,
+#                                    file_prefix = paste0('uncalib_stand', i),
+#                                    STDIDENT = paste0('UNCALBST', i))
+#     
+#     # grow the stand
+#     fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
+#     
+#     y <- c(st$INV_YEAR, st$INV_YEAR+10)
+#     # get grown tree list
+#     fvs_output <- fvsInteractRun(AfterEM1='fetchTrees()',
+#                                  SimEnd=fvsGetSummary)
+#     names(fvs_output)
+#     
+#     # 2007 tree list in element 1, just to check
+#     tl1 <- fvs_output[[1]]$AfterEM1 |>
+#       dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
+#                        by = dplyr::join_by(id == fvs.TREE_ID))
+#     nrow(tl1)
+#     # 2017 tree list output in element 2. use left_join to match up with TUID
+#     tl2 <- fvs_output[[2]]$AfterEM1 |>
+#       dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
+#                        by = join_by(id == fvs.TREE_ID))
+#     nrow(tl2)
+#     tl <- rbind(tl1, tl2)
+#     nrow(tl)
+#     uncalib_proj$treelist <- rbind(uncalib_proj$treelist, tl)
+#     
+#     # similar with plot summaries
+#     uncalib_proj$summary <- rbind(uncalib_proj$summary,
+#                                   cbind(fvs_output[[length(fvs_output)]],
+#                                         data.frame(PID = st$PID)))
+#   }
+#   
+# 
+#   rFVS::fvsLoad("FVSie", fvs_bin)
+# }
+```
+
+Let's check our outputs:
+
+```{r}
+#| label: check-uncalib-out
+# names(fvs_output)
+# 
+# saveRDS(uncalib_proj$treelist, file = file.path('..', '..', 'data', 'sim_outputs', 'uncalib.RData'))
+# saveRDS(uncalib_proj$summary, file = file.path('..', '..', 'data', 'sim_outputs', 'uncalibsummary.RData'))
+```
+
+### Self-calibrated with 2x remeasured plots
+
+For self-calibration, we will project from first to second remeasure. FVS will calculate adjustment factors, and we will extract those factors to use when projecting from first measure to first remeasure. We're doing this because there are not many plots that have been remeasured 2x, so want to maximize sample for equivalence testing.
+
+```{r}
+#| label: t1-t2-stands-trees
+t1_stands <- dplyr::filter(standInitIE, N_REM == 2, REM_CD == 1) |>
+  as.data.frame()
+t2_stands <- dplyr::filter(standInitIE, REM_CD == 2) |>
+  dplyr::arrange(PID) |>
+  dplyr::mutate(FOREST = as.numeric(FOREST)) |>
+  as.data.frame()
+nrow(t1_stands)
+nrow(t2_stands) # only 5 plot IDs
+
+plot_rems <- dplyr::left_join(t2_stands,
+                              dplyr::select(t1_stands, PID, INV_YEAR),
+                              by = dplyr::join_by(PID)) |>
+  dplyr::arrange(PID)
+
+# checked by hand and saw that PIDs match up
+t2_stands$REM_INT <- plot_rems$INV_YEAR.x - plot_rems$INV_YEAR.y
+
+t2_trees <- filter(treeInitIE, STAND_CN %in% t2_stands$STAND_CN) |>
+  clean_FIA_treeList(standinfo = standInitIE) |>
+  as.data.frame()
+head(t2_trees)
+```
+
+This gives us `{r} nrow(t2_trees)` to use for calibration.
+
+```{r}
+#| label: run-selfcalib-projections
+# make directory. Use date and time to help with ID later
+# dt <- paste0('sc_', format(Sys.Date(), '%b%d%Y'), '_', format(Sys.time(), '%H.%M'), collapse = '')
+# outdir <- file.path(fvs_runs, dt)
+# dir.create(outdir)
+# filenames <- rep(NA, nrow(t2_stands))
+# 
+# # projection parameters
+# num_years <- 11 # number of years into the future to project
+# use_tripling <- FALSE
+# use_calibration <- TRUE
+# use_regenmodel <- FALSE
+# 
+# # FVS will  overwrite each stand, so we need storage
+# selfcalib_proj <- list()
+# selfcalib_proj$treelist <- NULL
+# selfcalib_proj$summary <- NULL
+# selfcalib_proj$calibstats <- NULL
+# 
+# for(i in 1:nrow(t2_stands)){
+#   st <- t2_stands[i,]
+#   tr <- t2_trees[t2_trees$STAND_CN == st$STAND_CN,] |>
+#     as.data.frame()
+#   if(sum(tr$HISTORY %in% 6:9) == nrow(tr)){
+#     cat('Skipping stand ', st$STAND_CN, ' (PID ', st$PID, ') \n', sep = '')
+#   }else{
+#     tr$fvs.TREE_ID <- 1:nrow(tr)
+#     rFVS::fvsLoad("FVSie", fvs_bin)
+#     filenames[i] <- write.FVSfiles(trees=tr,
+#                                    stand=st,
+#                                    years_out=num_years,
+#                                    calibrate=use_calibration,
+#                                    triple=use_tripling,
+#                                    add_regen=use_regenmodel,
+#                                    file_prefix = paste0('selfcalib_stand', i),
+#                                    outdir = outdir,
+#                                    STDIDENT = paste0('SELFCALB', i))
+# 
+#     # grow the stand
+#     fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
+# 
+#     y <- c(st$INV_YEAR, st$INV_YEAR+10)
+#     # get grown tree list
+#     fvs_output <- fvsInteractRun(AfterEM1='fetchTrees()',
+#                                  SimEnd=fvsGetSummary)
+#     names(fvs_output)
+# 
+#     # 2007 tree list in element 1, just to check
+#     tl1 <- fvs_output[[1]]$AfterEM1 |>
+#       dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
+#                        by = dplyr::join_by(id == fvs.TREE_ID))
+#     nrow(tl1)
+#     # 2017 tree list output in element 2. use left_join to match up with TUID
+#     tl2 <- fvs_output[[2]]$AfterEM1 |>
+#       dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
+#                        by = join_by(id == fvs.TREE_ID))
+#     nrow(tl2)
+#     tl <- rbind(tl1, tl2)
+#     nrow(tl)
+# 
+# 
+#     selfcalib_proj$treelist <- rbind(selfcalib_proj$treelist, tl)
+# 
+#     # similar with plot summaries
+#     selfcalib_proj$summary <- rbind(selfcalib_proj$summary,
+#                                   cbind(fvs_output[[length(fvs_output)]],
+#                                         data.frame(PID = st$PID)))
+#     # Get calibration statistics
+#     conn <- DBI::dbConnect(RSQLite::SQLite(), 'FVSOut.db')
+#     calib <- dplyr::tbl(conn, 'FVS_CalibStats') |>
+#       dplyr::collect()
+# 
+#     DBI::dbDisconnect(conn)
+# 
+#     selfcalib_proj$calibstats <- rbind(selfcalib_proj$calibstats, calib)
+#     remove(conn)
+#     file.remove('FVSOut.db')
+#   }
+# 
+# 
+#   rFVS::fvsLoad("FVSie", fvs_bin)
+# }
+```
+
+```{r}
+#| label: save-selfcalb-out
+# saveRDS(selfcalib_proj$treelist,
+#         file = file.path(sim_out, 'selfcalib_trees.RData'))
+# saveRDS(selfcalib_proj$summary,
+#         file = file.path(sim_out, 'selfcalib_summary.RData'))
+# saveRDS(selfcalib_proj$calibstats,
+#         file = file.path(sim_out, 'selfcalib_calbstat.RData'))
+```
+
+Now that we have calibration statistics, we will take averages by species and size class to get multipliers for the next run:
+
+```{r}
+#| label: load-calib-stats
+calib_stats <- readRDS(file.path(sim_out, 'selfcalib_calbstat.RData'))
+str(calib_stats)
+mults <- dplyr::select(calib_stats, 
+                       TreeSize, 
+                       SpeciesPLANTS, 
+                       SpeciesFIA,
+                       NumTrees, 
+                       ScaleFactor, 
+                       ReadCorMult) |>
+  dplyr::summarize(.by = c(TreeSize, SpeciesPLANTS, SpeciesFIA),
+                   n = sum(NumTrees),
+                   avgScaleFactor = mean(ScaleFactor, na.rm = TRUE),
+                   avgReadCorMult = mean(ReadCorMult, na.rm = TRUE))
+```
+
+We need to format these codes according to the IE variant number, or FVS will tweak. We also need to make 2 separate frames: one for large tree diameter growth multipliers, one for small tree height growth multipliers.
+
+```{r}
+#| label: get-multipliers
+ltdg_mults <- dplyr::filter(mults, TreeSize == 'LG') |>
+  dplyr::full_join(select(species_tab, fvs_cd, sp_abb),
+                   by = join_by(SpeciesPLANTS == sp_abb)) |>
+  arrange(fvs_cd) |>
+  dplyr::mutate(READCORD = stringr::str_pad(ifelse(is.na(avgReadCorMult),
+                                                   # default multiplier is 1.0
+                                                   '1.00', 
+                                                   round(avgReadCorMult, 2)),
+                                           width = 10,
+                                           pad = ' ',
+                                           side = 'left')
+                )
+ltdg_mults
+
+sthg_mults <- dplyr::filter(mults, TreeSize == 'SM') |>
+  dplyr::full_join(select(species_tab, fvs_cd, sp_abb),
+                   by = join_by(SpeciesPLANTS == sp_abb)) |>
+  arrange(fvs_cd) |>
+  dplyr::mutate(READCORR = stringr::str_pad(ifelse(is.na(avgReadCorMult)|avgReadCorMult == 1,
+                                                   # default multiplier is 1.0
+                                                   '1.00', 
+                                                   round(avgReadCorMult, 2)),
+                                           width = 10,
+                                           pad = ' ',
+                                           side = 'left')
+                )
+sthg_mults
+```
+
+One thing to note is that we do not have growth multipliers for every tree species. For large trees, we have Douglas-fir, Ponderosa Pine, Subalpine Fir, Englemann Spruce, and Lodgepole Pine. For small trees, we have doug fir and subalpine fir.
+
+Now, we're ready to run a new FVS projection with our custom multipliers:
+
+```{r}
+#| label: multipliers-run
+# make directory. Use date and time to help with ID later
+# dt <- paste0('mult_', format(Sys.Date(), '%b%d%Y'), '_', format(Sys.time(), '%H.%M'), collapse = '')
+# outdir <- file.path(fvs_runs, dt)
+# dir.create(outdir)
+# filenames <- rep(NA, nrow(t0_stands))
+# 
+# # projection parameters
+# num_years <- 11 # number of years into the future to project
+# use_tripling <- FALSE
+# use_calibration <- FALSE # calibration OFF. This should be redundant because these trees don't have defined HTG/DG columns.
+# use_regenmodel <- FALSE
+# 
+# # FVS will  overwrite each stand, so we need storage
+# mult_proj <- list()
+# mult_proj$treelist <- NULL
+# mult_proj$summary <- NULL
+# 
+# for(i in 1:nrow(t0_stands)){
+#   st <- t0_stands[i,]
+#   tr <- t0_trees |>
+#     dplyr::filter(STAND_CN == st$STAND_CN,
+#                   SPECIES %in% as.numeric(mults$SpeciesFIA)) |>
+#     as.data.frame()
+#   
+#   if((sum(tr$HISTORY %in% 6:9) == nrow(tr))|(nrow(tr) == 0)){
+#     # warn if there are no live trees to project
+#     cat('Skipping stand ', st$STAND_CN, ' (PID ', st$PID, ') \n', sep = '')
+#   }else{
+#     tr$fvs.TREE_ID <- 1:nrow(tr)
+#     rFVS::fvsLoad("FVSie", fvs_bin)
+#     filenames[i] <- write.FVSfiles(trees=tr,
+#                                    stand=st,
+#                                    years_out=num_years,
+#                                    calibrate=use_calibration,
+#                                    triple=use_tripling,
+#                                    add_regen=use_regenmodel,
+#                                    file_prefix = paste0('mult_stand', i),
+#                                    outdir = outdir,
+#                                    STDIDENT = paste0('MULT', i),
+#                                    READCORD = ltdg_mults$READCORD,
+#                                    READCORR = sthg_mults$READCORR)
+# 
+#     # grow the stand
+#     fvsSetCmdLine(paste0("--keywordfile=",filenames[i],".key"))
+# 
+#     y <- c(st$INV_YEAR, st$INV_YEAR+10)
+#     # get grown tree list
+#     fvs_output <- fvsInteractRun(AfterEM1='fetchTrees()',
+#                                  SimEnd=fvsGetSummary)
+#     names(fvs_output)
+# 
+#     # 2007 tree list in element 1, just to check
+#     tl1 <- fvs_output[[1]]$AfterEM1 |>
+#       dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
+#                        by = dplyr::join_by(id == fvs.TREE_ID))
+#     nrow(tl1)
+#     # 2017 tree list output in element 2. use left_join to match up with TUID
+#     tl2 <- fvs_output[[2]]$AfterEM1 |>
+#       dplyr::left_join(select(tr, fvs.TREE_ID, TUID, PID),
+#                        by = join_by(id == fvs.TREE_ID))
+#     nrow(tl2)
+#     tl <- rbind(tl1, tl2)
+#     nrow(tl)
+# 
+# 
+#     mult_proj$treelist <- rbind(mult_proj$treelist, tl)
+# 
+#     # similar with plot summaries
+#     mult_proj$summary <- rbind(mult_proj$summary,
+#                                   cbind(fvs_output[[length(fvs_output)]],
+#                                         data.frame(PID = st$PID)))
+#   }
+# 
+# 
+#   rFVS::fvsLoad("FVSie", fvs_bin)
+# }
+# 
+# saveRDS(mult_proj$treelist, file.path(sim_out, 'mult_trees.RData'))
+# saveRDS(mult_proj$summary, file.path(sim_out, 'mult_summary.RData'))
+```
+
+## Visualizing Model Performance
+
+First, let's load the results of our two projections: the uncalibrated projection from $T_{B0} \rightarrow \widehat{T_{B1, \text{ uncalib}}}$ and the self-calibrated projection from $T_{B0} \rightarrow \widehat{T_{B1, \text{ self calib}}}$. We will join up these predictions with the observed data $T_{B1}$ from the FIA dataset. We'll use tree unique ID (TUID) and year to do that because they uniquely identify observations. We will only look at trees that were not seedlings in the initial inventory year.
+
+```{r}
+#| label: read-results-join
+
+# we had to cut down the number of species we analyzed, so let's make sure this
+#> is reflected:
+
+study_species <- as.numeric(unique(mults$SpeciesFIA))
+
+uncalib_tr <- readRDS(file.path(sim_out, 'uncalib.RData')) |>
+  dplyr::select(age, species, dbh, TUID, year) |>
+  dplyr::rename(fvs_cd = species, fvs_age = age, fvs_dbh = dbh) |>
+  dplyr::left_join(select(species_tab, fvs_cd, fia_cd),
+                   by = join_by(fvs_cd))
+
+mult_tr <- readRDS(file.path(sim_out, 'mult_trees.RData')) |>
+  dplyr::select(age, species, dbh, TUID, year) |>
+  dplyr::rename(fvs_cd = species, fvs_age = age, fvs_dbh = dbh) |>
+  dplyr::left_join(select(species_tab, fvs_cd, fia_cd),
+                   by = join_by(fvs_cd))
+
+# Dataframes that will be joined
+# blondshell reference
+joiner <- treeInitIE |>
+  dplyr::select(AGE, DIAMETER, TUID, PID, STAND_CN, REM_CD) |>
+  # need to get inventory year from stand info
+  dplyr::left_join(dplyr::select(standInit,
+                                 STAND_CN, INV_YEAR),
+                   by = dplyr::join_by(STAND_CN)) |>
+  dplyr::rename(fia_age = AGE, fia_dbh = DIAMETER, year = INV_YEAR)
+
+# one comparison dataframe for each run
+uncalib_comp <- dplyr::left_join(uncalib_tr, joiner, 
+                                 by = dplyr::join_by(TUID, year)) |>
+  dplyr::filter(fia_cd %in% study_species,
+                fia_dbh > 0.1) |>
+  dplyr::mutate(model = 'uncalibrated',
+                dbh_group = cut(fia_dbh, breaks = c(1, 21, 41),
+                                right = FALSE, include.lowest = TRUE,
+                                labels = FALSE),
+                group_name = dplyr::case_when(dbh_group == 1 ~ 'DBH Group 1',
+                                              dbh_group == 2 ~ 'DBH Group 2',
+                                              .default = NA))
+
+mult_comp <- dplyr::left_join(mult_tr, joiner,
+                              by = dplyr::join_by(TUID, year)) |>
+  dplyr::filter(fia_cd %in% study_species,
+                fia_dbh > 0.1) |>
+  dplyr::mutate(model = 'multiplier',
+                dbh_group = cut(fia_dbh, breaks = c(1, 21, 41),
+                                right = FALSE, include.lowest = TRUE,
+                                labels = FALSE),
+                group_name = dplyr::case_when(dbh_group == 1 ~ 'DBH Group 1',
+                                              dbh_group == 2 ~ 'DBH Group 2',
+                                              .default = NA))
+
+# overall comparison dataframe
+comp <- rbind(uncalib_comp, mult_comp) |>
+  dplyr::mutate(prediction_err = fvs_dbh-fia_dbh)
+
+# version of comparison dataframe that only includes projection/first remeasurement years
+comp_rem <- dplyr::filter(comp, REM_CD == 1)
+```
+
+Let's do a sanity check and make sure that everything matches in the inventory year, before FVS has done any projections.
+
+```{r}
+#| label: sanity-check 
+check <- dplyr::filter(uncalib_comp, REM_CD == 0) 
+plot(check$fvs_dbh, check$fia_dbh, pch = 20, col = rgb(0, 0, 0, 0.5),
+     main = 'Uncalibrated sanity check') 
+abline(coef = c(0, 1), col = 'red')
+
+check <- dplyr::filter(mult_comp, REM_CD == 0) 
+plot(check$fvs_dbh, check$fia_dbh, pch = 20, col = rgb(0, 0, 0, 0.5),
+     main = 'Adjusted multipliers sanity check') 
+abline(coef = c(0, 1), col = 'red')
+```
+
+Both look good.
+
+Now, let's graphically compare projected dbh's vs measured dbh. We will only look at non-seedlings.
+
+```{r}
+#| label: plot-uc 
+uncalib_plt <- dplyr::filter(uncalib_comp, REM_CD == 1) |>   
+  ggplot(aes(x = fia_dbh, y = fvs_dbh, color = factor(fia_cd)))+   
+  geom_point(alpha = 0.5)+   
+  geom_abline(aes(slope = 1, intercept = 0),               
+              linetype = 'dashed',              
+              col = 'black',               
+              lwd = 1)+   
+  labs(x = 'Measured DBH 10 years after initial measurement',        
+       y = 'Projected DBH 10 years after initial measurement',
+       title = 'Uncalibrated')    
+
+mult_plt <- dplyr::filter(mult_comp, REM_CD == 1) |>
+  ggplot(aes(x = fia_dbh, y = fvs_dbh, color = factor(fia_cd)))+
+  geom_point(alpha = 0.5)+
+  geom_abline(aes(slope = 1, intercept = 0),
+              linetype = 'dashed',
+              col = 'black',
+              lwd = 1)+
+  labs(x = 'Measured DBH 10 years after initial measurement',
+       y = 'Projected DBH 10 years after initial measurement',
+       title = 'Multiplier Adjusted')
+
+uncalib_plt/mult_plt+plot_layout(guides = 'collect', axes = 'collect')
+
+both_plt <- comp_rem |>
+  mutate(model_clean = case_when(model == 'uncalibrated' ~ 'Uncalibrated',
+                                 model == 'multiplier' ~ 'Multiplier Calibrated'),
+         model_clean = factor(model_clean, levels = c('Uncalibrated',
+                                                      'Multiplier Calibrated'),
+                              ordered = TRUE)) |>
+  ggplot(aes(x = fia_dbh, y = fvs_dbh))+
+  geom_point(alpha = 0.25)+
+  facet_wrap(facets = vars(factor(model_clean)))+
+  geom_abline(aes(intercept = 0, slope = 1), col = 'red')+
+  labs(x = 'FIA remeasured DBH', y = 'FVS projected DBH')+
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14))
+
+both_plt
+```
+
+Visually, it does look like adjusting the multipliers helped! Let's break this down further by species and see how error varies with diameter:
+
+```{r}
+#| label: mult-adjust-species
+(uncalib_plt+facet_wrap(facets = vars(fia_cd), nrow = 1))/
+(mult_plt+facet_wrap(facets = vars(fia_cd), nrow = 1))+
+  plot_layout(guides = 'collect', axes = 'collect')&
+  theme(legend.position = 'bottom')
+
+uncalib_dbh_err_plt <- uncalib_comp |>
+  dplyr::filter(REM_CD == 1) |>
+  ggplot(aes(x = fia_dbh, y = fvs_dbh-fia_dbh))+
+  geom_point(alpha = 0.25)+
+  #geom_smooth(color = 'red')+
+  geom_hline(yintercept = 0, color = 'blue')+
+  facet_wrap(facets = vars(factor(fia_cd)), nrow = 1)+
+  scale_y_continuous(limits = c(-4, 11))+
+  labs(x = 'Remeasured DBH, time 2', y = 'Prediction error', title = 'Uncalibrated')
+
+mult_dbh_err_plt <- mult_comp |>
+  dplyr::filter(REM_CD == 1) |>
+  ggplot(aes(x = fia_dbh, y = fvs_dbh-fia_dbh))+
+  geom_point(alpha = 0.25)+
+  geom_hline(yintercept = 0, color = 'blue')+
+  facet_wrap(facets = vars(factor(fia_cd)), nrow = 1)+
+  scale_y_continuous(limits = c(-4, 11))+
+  labs(x = 'Remeasured DBH, time 2', y = 'Prediction error', 
+       title = 'Multiplier adjusted')
+uncalib_dbh_err_plt/mult_dbh_err_plt+plot_layout(axes = 'collect')
+```
+
+Let's look at the distribution of the remeasured/projected diameters.
+
+```{r}
+#| label: hist-diams
+hist(uncalib_comp$fia_dbh[uncalib_comp$REM_CD == 1]) 
+hist(log(uncalib_comp$fia_dbh[uncalib_comp$REM_CD == 1]))  
+hist(uncalib_comp$fvs_dbh[uncalib_comp$REM_CD == 1]) 
+hist(log(uncalib_comp$fvs_dbh[uncalib_comp$REM_CD == 1]))
+
+hist(mult_comp$fia_dbh[mult_comp$REM_CD == 1]) 
+hist(log(mult_comp$fia_dbh[mult_comp$REM_CD == 1]))  
+hist(mult_comp$fvs_dbh[mult_comp$REM_CD == 1]) 
+hist(log(mult_comp$fvs_dbh[mult_comp$REM_CD == 1]))
+```
+
+So we should for sure log transform diameter when we formally test whether projections differ from measurements.
+
+## Calculating error measurements
+
+We'll calculate a few general error measurements to summarize our results.
+
+```{r}
+#| label: calc-errors
+uncalib_errors <- uncalib_comp |>
+  dplyr::filter(REM_CD == 1) |>
+  dplyr::summarize(.by = fia_cd,
+                   ME = mean(fvs_dbh-fia_dbh, na.rm = TRUE),
+                   MAE = mean(abs(fvs_dbh-fia_dbh), na.rm = TRUE),
+                   RMSE = sqrt(mean((fvs_dbh-fia_dbh)^2, na.rm = TRUE)))
+
+mult_errors <- mult_comp |>
+   dplyr::filter(REM_CD == 1) |>
+  dplyr::summarize(.by = fia_cd,
+                   ME = mean(fvs_dbh-fia_dbh, na.rm = TRUE),
+                   MAE = mean(abs(fvs_dbh-fia_dbh), na.rm = TRUE),
+                   RMSE = sqrt(mean((fvs_dbh-fia_dbh)^2, na.rm = TRUE)))
+
+error_comp <- full_join(uncalib_errors, mult_errors,
+                        by = dplyr::join_by(fia_cd),
+                        suffix = c('_uc', '_mult')) |>
+  tidyr::pivot_longer(cols = c(ME_uc, ME_mult, RMSE_uc, RMSE_mult,
+                               MAE_uc, MAE_mult),
+                      names_to = 'error_type', values_to = 'error_value')
+```
+
+Now we'll visualize these a few different ways.
+
+```{r}
+#| label: viz-error
+# only split by error type and where it came from
+error_plt <- ggplot(error_comp)+
+  geom_col(aes(x = error_type, y = error_value))
+  #geom_hline(yintercept = 0)
+error_plt
+
+# split by species
+error_spec_plt <- ggplot(error_comp)+
+  geom_col(aes(x = error_type, y = error_value, fill = factor(fia_cd)),
+           position = 'dodge')
+  #geom_hline(yintercept = 0)
+error_spec_plt
+
+
+# just RMSE
+
+rmse_all_plot <- dplyr::filter(error_comp, 
+                               stringr::str_detect(error_type, 'RMSE')) |>
+  ggplot()+
+  geom_col(aes(x = error_type, y = error_value, fill = factor(fia_cd)),
+           position = 'dodge')
+rmse_all_plot
+
+# just mean error
+me_all_plot <- dplyr::filter(error_comp, 
+                             stringr::str_detect(error_type, 'ME')) |>
+  ggplot()+
+  geom_col(aes(x = error_type, y = error_value, fill = factor(fia_cd)),
+           position = 'dodge')
+me_all_plot
+
+# error boxplots
+ggplot(data = comp_rem, aes(x = model, group = model, y = prediction_err))+
+  geom_jitter(alpha = 0.25)+
+  geom_boxplot(outliers = FALSE, fill = NA, color = 'red', box.color = NA, 
+               whisker.color = NA)
+
+```
+
+It looks like there may be species specific patterns to investigate. Though mult has reduced errors by all metrics, the extent of this reduction appears to vary by species.
+
+### Testing error differences
+
+Let's formally test whether or not there actually are differences in error.
+
+```{r}
+
+comp_rem_summ <- comp_rem |>
+  group_by(model) |>
+  summarize(err_mean = mean(prediction_err),
+            n = n(),
+            se = sd(prediction_err)/sqrt(n()))
+
+err_hist <- ggplot()+
+  geom_histogram(data = comp_rem, 
+                 aes(x = prediction_err),
+                 bins = 30, col = 'black', fill = 'lightgrey')+
+  geom_vline(data = comp_rem_summ,
+             aes(xintercept = err_mean), 
+             col = 'red')+
+  geom_vline(xintercept = 0, lty = 'dashed')+
+  facet_wrap(facets = vars(factor(model,
+                                  levels = c('uncalibrated', 'multiplier'),
+                                  labels = c(uncalibrated = 'Uncalibrated',
+                                             multiplier = 'Multiplier'),
+                                  ordered = TRUE)),
+             nrow = 2)+
+  geom_text(data = comp_rem_summ,
+            aes(label = paste('Mean \u00B1 SE = ', 
+                              round(err_mean, 2), 
+                              '\u00B1', 
+                              round(se, 2)),
+                y = 1250, x = 5),
+            size = 5)+
+  labs(x = 'Prediction Error (Predicted - Observed DBH, in)',
+       y = 'Count')+
+  theme(axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        strip.text = element_text(size = 14))
+
+err_hist
+
+
+```
+
+By t-test, means are significantly different from each other. Both means are also greater than 0 by t-test. However, multiplier-adjusted predictions have lower error than uncalibrated.
+
+## Equivalence Testing
+
+### Cankaya and Radtke approach
+
+Generally, we set the tolerance level $\tau$ a priori. This tolerance level represents how much "wiggle room" we're comfortable having between the observed and predicted DBHs. If this value is very high, we will clearly reject the null hypothesis of dissimilarity in most situations (e.g., if $\tau$ is 20in allowed difference in DBH, we would reject the null and conclude similarity for many models!). But if the value is very small, we may fail to identify meaningful similarity. For example if we choose $\tau$ to be, say, 0.001 in difference in DBH, we would likely conclude that pretty much any model (or even remeasurement on the same day by a different person) is dissimilar.
+
+So in this approach, we find the smallest $\tau$ that will lead to rejection of the null (concluding the models are equivalent), given an allowed type 1 error rate (false positive rate – ie., rate of incorrectly concluding equivalence). This is called the "minimum detectable negligible difference" (MDND). We can compare $\tau_{MDND}$ across different calibration techniques to see which calibration techniques give us the smallest $\tau_{MDND}$ i.e., the smallest of the smallest tolerances. The smaller the tolerance, the closer the alignment.
+
+We calculate $\tau_{MDND}$ as:
+
+$$ \tau_{MDND} = |\overline{d_e}| - t_{\alpha, \text{df}} * \text{se}(\overline{d_e}) $$
+
+Where $d_e$ is the prediction error $|\text{predicted - observed}|$.
+
+The degrees of freedom will be $N-1$.
+
+```{r}
+uc_errs <- error_df$error[error_df$calibration == 'uncalibrated']
+uc_mdnd <- abs(mean(uc_errs)) - dt(0.05, length(uc_errs)-1)*(sd(uc_errs)/sqrt(length(uc_errs)))
+
+mult_errs <- error_df$error[error_df$calibration == 'multiplier']
+mult_mdnd <- abs(mean(mult_errs)-dt(0.05, length(mult_errs)-1))*(sd(mult_errs)/sqrt(length(mult_errs)))
+
+uc_mdnd
+mult_mdnd
+```
+
+We see that the MDND for the multiplier-calibrated model is well within the USFS tolerance of 0.2", but the MDND for the uncalibrated model is not.
+
+Let's repeat this analysis, but broken down by species:
+
+```{r}
+# Subalpine Fir
+abla_uc_errs <- error_df |>
+  dplyr::filter(species == 19,
+                calibration == 'uncalibrated') |>
+  dplyr::select(error) |>
+  unlist()
+
+abla_mult_errs <- error_df |>
+  dplyr::filter(species == 19,
+                calibration == 'multiplier') |>
+  dplyr::select(error) |>
+  unlist()
+
+abla_mdnd_uc <- abs(mean(abla_uc_errs)-dt(0.05, length(abla_uc_errs)-1))*(sd(abla_uc_errs)/sqrt(length(abla_uc_errs)))
+
+abla_mdnd_mult <- abs(mean(abla_mult_errs)-dt(0.05, length(abla_mult_errs)-1))*(sd(abla_mult_errs)/sqrt(length(abla_mult_errs)))
+
+# Engelmann spruce
+pien_uc_errs <- error_df |>
+  dplyr::filter(species == 93,
+                calibration == 'uncalibrated') |>
+  dplyr::select(error) |>
+  unlist()
+
+pien_mult_errs <- error_df |>
+  dplyr::filter(species == 93,
+                calibration == 'multiplier') |>
+  dplyr::select(error) |>
+  unlist()
+
+pien_mdnd_uc <- abs(mean(pien_uc_errs)-dt(0.05, length(pien_uc_errs)-1))*(sd(pien_uc_errs)/sqrt(length(pien_uc_errs)))
+
+pien_mdnd_mult <- abs(mean(pien_mult_errs)-dt(0.05, length(pien_mult_errs)-1))*(sd(pien_mult_errs)/sqrt(length(pien_mult_errs)))
+
+# Lodgepole Pine (108)
+pico_uc_errs <- error_df |>
+  dplyr::filter(species == 108,
+                calibration == 'uncalibrated') |>
+  dplyr::select(error) |>
+  unlist()
+
+pico_mult_errs <- error_df |>
+  dplyr::filter(species == 108,
+                calibration == 'multiplier') |>
+  dplyr::select(error) |>
+  unlist()
+
+pico_mdnd_uc <- abs(mean(pico_uc_errs)-dt(0.05, length(pico_uc_errs)-1))*(sd(pico_uc_errs)/sqrt(length(pico_uc_errs)))
+
+pico_mdnd_mult <- abs(mean(pico_mult_errs)-dt(0.05, length(pico_mult_errs)-1))*(sd(pico_mult_errs)/sqrt(length(pico_mult_errs)))
+
+# Ponderosa Pine (122)
+pipo_uc_errs <- error_df |>
+  dplyr::filter(species == 122,
+                calibration == 'uncalibrated') |>
+  dplyr::select(error) |>
+  unlist()
+
+pipo_mult_errs <- error_df |>
+  dplyr::filter(species == 122,
+                calibration == 'multiplier') |>
+  dplyr::select(error) |>
+  unlist()
+
+pipo_mdnd_uc <- abs(mean(pipo_uc_errs)-dt(0.05, length(pipo_uc_errs)-1))*(sd(pipo_uc_errs)/sqrt(length(pipo_uc_errs)))
+
+pipo_mdnd_mult <- abs(mean(pipo_mult_errs)-dt(0.05, length(pipo_mult_errs)-1))*(sd(pipo_mult_errs)/sqrt(length(pipo_mult_errs)))
+
+# Douglas-fir (202)
+psme_uc_errs <- error_df |>
+  dplyr::filter(species == 202,
+                calibration == 'uncalibrated') |>
+  dplyr::select(error) |>
+  unlist()
+
+psme_mult_errs <- error_df |>
+  dplyr::filter(species == 202,
+                calibration == 'multiplier') |>
+  dplyr::select(error) |>
+  unlist()
+
+psme_mdnd_uc <- abs(mean(psme_uc_errs)-dt(0.05, length(psme_uc_errs)-1))*(sd(psme_uc_errs)/sqrt(length(psme_uc_errs)))
+
+psme_mdnd_mult <- abs(mean(psme_mult_errs)-dt(0.05, length(psme_mult_errs)-1))*(sd(psme_mult_errs)/sqrt(length(psme_mult_errs)))
+
+cat('ABLA', abla_mdnd_uc, abla_mdnd_mult, '\n',
+    'PIEN', pien_mdnd_uc, pien_mdnd_mult, '\n',
+    'PICO', pico_mdnd_uc, pico_mdnd_mult, '\n',
+    'PIPO', pipo_mdnd_uc, pipo_mdnd_mult, '\n',
+    'PSME', psme_mdnd_uc, psme_mdnd_mult)
+```
+
+### TOST
+
+The FIA field guide for NFI data collection gives defines DBH tolerance as $\pm$ 0.1in per 20in increment for all live trees. We will use this as our guideline for "equivalence", which requires that we break the data up into groups of 20in increment and test these groups separately.
+
+```{r}
+#| label: assign-dbh-group
+# use by = 19 because we start at 1
+#> Groups are: [1, 21), [21, 41]
+comp_rem <- mutate(comp_rem,
+                   tolerance = 0.1*dbh_group) 
+```
+
+To formally test this at the $\alpha = 0.05$ level, we will check to see if the 100\*(1-2$\alpha$)% = 90% confidence interval is contained in the equivalence interval. Under the null hypothesis, it will not.
+
+Let's calculate the 90% CI for mean measurement difference using a bootstrapping approach.
+
+First, we run the bootstrap:
+
+```{r}
+#| label: bootstrap-for-meas-diff
+N <- 1000 # bootstrap replicates
+# storage vectors for mean difference
+bs_diff_uc <- list(group1 = rep(NA, N),
+                   group2 = rep(NA, N)) 
+
+bs_diff_mult <- list(group1 = rep(NA, N),
+                   group2 = rep(NA, N)) 
+
+for(i in 1:N){
+  bs_samp <- comp_rem |>
+    dplyr::group_by(model, dbh_group) |>
+    dplyr::slice_sample(prop = 1, replace = TRUE)
+  bs_means <- bs_samp |>
+    dplyr::summarize(mean_diff = mean(prediction_err)) |>
+    suppressMessages()
+  
+  # store results
+  bs_diff_uc$group1[i] <- bs_means$mean_diff[bs_means$model=='uncalibrated'&
+                                               bs_means$dbh_group==1]
+  bs_diff_uc$group2[i] <- bs_means$mean_diff[bs_means$model=='uncalibrated'&
+                                               bs_means$dbh_group==2]
+  bs_diff_mult$group1[i] <- bs_means$mean_diff[bs_means$model=='multiplier'&
+                                                 bs_means$dbh_group==1]
+  bs_diff_mult$group2[i] <- bs_means$mean_diff[bs_means$model=='multiplier'&
+                                                 bs_means$dbh_group==2]
+}
+
+# dataframe for better plotting
+bs_diffs <- data.frame(mean_diff = c(bs_diff_uc$group1, 
+                                     bs_diff_uc$group2, 
+                                     bs_diff_mult$group1,
+                                     bs_diff_mult$group2),
+                       model = rep(c('uncalibrated', 'multiplier'), each = 2*N),
+                       group = rep(rep(c('1 =< DBH < 20', '20 =< DBH =< 40'), times = 2), 
+                                   each = N))
+```
+
+Next, we visualize the bootstrap results:
+
+```{r}
+hist(bs_diff_uc$group1)
+hist(bs_diff_uc$group2)
+hist(bs_diff_mult$group1)
+hist(bs_diff_mult$group2)
+
+bs_hist_plt <- ggplot(bs_diffs)+
+  geom_histogram(aes(x = mean_diff), fill = 'lightgrey', color = 'black',bins = 20)+
+  facet_wrap(facets = vars(model, group), scales = 'free')
+bs_hist_plt
+```
+
+And now we'll calculate the 90% confidence interval for the difference based on this bootstrap:
+
+```{r}
+uc_cis <- lapply(bs_diff_uc, FUN = \(x) quantile(x, c(0.05, 0.95)))
+
+mult_cis <- lapply(bs_diff_mult, FUN = \(x) quantile(x, c(0.05, 0.95)))
+
+uc_cis
+mult_cis
+
+# for plotting
+tol_ci <- data.frame(model = rep(c('uncalibrated', 'multiplier'), each = 2),
+                     group = rep(c('1 =< DBH < 20', '20 =< DBH =< 40'), times = 2),
+                     tol_low = rep(c(-0.1, -0.2), times = 2),
+                     tol_high = rep(c(0.1, 0.2), times = 2),
+                     ci_low = c(uc_cis$group1[1], 
+                                uc_cis$group2[1], 
+                                mult_cis$group1[1], 
+                                mult_cis$group2[1]),
+                     ci_high = c(uc_cis$group1[2], 
+                                 uc_cis$group2[2], 
+                                 mult_cis$group1[2], 
+                                 mult_cis$group2[2]))
+
+```
+
+Let's layer our empirical confidence intervals and our tolerance intervals on the histograms we see above to visualize if our confidence intervals are contained within tolerance. Unfortunately, because we want shaded regions to be in the background, we have to start from scratch:
+
+```{r}
+ggplot(bs_diffs)+
+  geom_rect(data = tol_ci,
+            aes(xmin = tol_low, xmax = tol_high, ymin = -Inf, ymax = Inf),
+            alpha = 0.5, fill = 'pink')+
+  geom_rect(data = tol_ci,
+           aes(xmin = ci_low, xmax = ci_high, ymin = -Inf, ymax = Inf),
+           alpha = 0.5, fill = 'lightblue')+
+  geom_histogram(aes(x = mean_diff), fill = 'lightgrey', color = 'black',bins = 20)+
+  facet_wrap(facets = vars(model, group), scales = 'free')+
+  labs(x = 'Bootstrap Mean Difference (FVS DBH - Measured DBH, in)',
+       y = 'Count')
+
+uncalib_tost <- filter(bs_diffs, model == 'uncalibrated') |>
+  ggplot()+
+  geom_rect(data = filter(tol_ci, model == 'uncalibrated'),
+            aes(xmin = tol_low, xmax = tol_high, ymin = -Inf, ymax = Inf, fill = 'Equivalence Interval'),
+            alpha = 0.5)+
+  geom_rect(data = filter(tol_ci, model == 'uncalibrated'),
+           aes(xmin = ci_low, xmax = ci_high, ymin = -Inf, ymax = Inf,
+               fill = 'Confidence Interval'),
+           alpha = 0.5)+
+  geom_vline(xintercept = 0, lty = 'dashed')+
+  geom_histogram(aes(x = mean_diff), fill = 'lightgrey', color = 'black',bins = 30)+
+  facet_wrap(facets = vars(group), scales = 'free')+
+  labs(x = 'Bootstrap Mean Difference (FVS DBH - Measured DBH, in)',
+       y = 'Count',
+       fill = '')+
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14))
+  uncalib_tost
+  
+  mult_tost <- filter(bs_diffs, model == 'multiplier') |>
+  ggplot()+
+  geom_rect(data = filter(tol_ci, model == 'multiplier'),
+            aes(xmin = tol_low, xmax = tol_high, ymin = -Inf, ymax = Inf,
+                fill = 'Equivalence Interval'),
+            alpha = 0.5)+
+  geom_rect(data = filter(tol_ci, model == 'multiplier'),
+           aes(xmin = ci_low, xmax = ci_high, ymin = -Inf, ymax = Inf, fill = 'Confidence Interval'),
+           alpha = 0.5)+
+    geom_vline(xintercept = 0, lty = 'dashed')+
+  geom_histogram(aes(x = mean_diff), fill = 'lightgrey', color = 'black',bins = 30)+
+  facet_wrap(facets = vars(group), scales = 'free')+
+  labs(x = 'Bootstrap Mean Difference (FVS DBH - Measured DBH, in)',
+       y = 'Count',
+       fill = '')+
+  theme(axis.title = element_text(size = 14),
+        axis.text = element_text(size = 12),
+        strip.text = element_text(size = 14))
+mult_tost
+  
+```
+
+Because our confidence intervals are not contained within the equivalence region, there is insufficient evidence to reject the null hypothesis of dissimilarity i.e., we cannot conclude equivalence.
+
+### Robinson et al approach
+
+This is a regression based approach. We do the following:
+
+1.  Calculate predictions.
+
+2.  Subtract mean prediction from all predictions to standardize them, making the slope and intercept of the subsequent regression independent.
+
+3.  Define regions of equivalence for the slope and intercept. The slope region will be 1 $\pm$ 0.1, and the intercept region will be the prediction mean $\pm$ 10%.
+
+4.  Estimate confidence intervals by bootstrap:
+
+    1.  For each bootstrap replicate,
+        1.  Regress observed values on predicted values.
+        2.  Calculate the proportion of times intercept and slope estimates are within the regions of equivalence
+        3.  
+    2.  Report the above and the quantiles associated with the 95% confidence interval (97.468% is the exact, to correct for the fact that we are jointly testing) for the slope and the intercept.
+
+5.  If either of the proportions of falling within the region of equivalence are greater than 0.949, reject null hypothesis of dissimilarity at $\alpha$ = 0.05 level.
+
+```{r}
+#| label: equivalence-test
+# Uncalibrated model ----
+uc_test <- uncalib_comp[uncalib_comp$REM_CD == 1,]
+uc_test$error <- uc_test$fvs_dbh-uc_test$fia_dbh
+
+## standardized predictions
+uc_test$pred_std <- uc_test$fvs_dbh-mean(uc_test$fvs_dbh)
+
+
+## Regions of equivalence
+uc_slope_equiv <- c(0.9, 1.1)
+uc_int_equiv <- c(mean(uc_test$fvs_dbh)-0.1*mean(uc_test$fvs_dbh), 
+                  mean(uc_test$fvs_dbh)+0.1*mean(uc_test$fvs_dbh))
+
+## Bootstrap
+N <- 1000
+r <- nrow(uncalib_comp)
+uc_bs_int <- rep(NA, N)
+uc_bs_slope <- rep(NA, N)
+
+for(i in 1:N){
+  indices <- sample(1:r, r, replace = TRUE)
+  bs_data <- uc_test[indices,]
+  
+  # fit regression to estimate slope and intercept
+  bs_reg <- lm(fia_dbh ~ pred_std, data = bs_data)
+  uc_bs_slope[i] <- coef(bs_reg)[2]
+  uc_bs_int[i] <- coef(bs_reg)[1]
+  
+}
+
+## estimate coverage probability of intervals
+uc_int_cp <- sum((uc_bs_int > int_equiv[1])&(uc_bs_int < int_equiv[2]))/length(uc_bs_int)
+uc_slope_cp <- sum(uc_bs_slope > slope_equiv[1]&uc_bs_slope < slope_equiv[2])/length(uc_bs_slope)
+
+## quantiles associated with 97.468% confidence interval = joint 95% CI
+b <- (1-0.97468)/2
+uc_int_ci <- quantile(uc_bs_int, c(b, 1-b))
+uc_slope_ci <- quantile(uc_bs_slope, c(b, 1-b))
+```
+
+```{r}
+## Visualize this
+uc_equiv_plt <- ggplot()+
+  geom_point(data = uc_test, aes(x = pred_std, y = fia_dbh), alpha = 0.5)+
+  geom_ribbon(data = uc_test, 
+              aes(x = pred_std, ymin = int_equiv[1], ymax = int_equiv[2]),
+              alpha = 0.5,
+              fill = 'pink')+
+  geom_abline(intercept = uc_int_ci[1],
+              slope = mean(uc_bs_slope),
+              col = 'red')+
+  geom_abline(intercept = uc_int_ci[2],
+              slope = mean(uc_bs_slope),
+              col = 'red')
+
+uc_equiv_plt
+```
