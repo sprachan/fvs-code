@@ -2,7 +2,17 @@
 title: "FVS Calibration with FIA Data"
 author: "Sejal Prachand"
 format: 
-  pdf
+  pdf:
+    documentclass: article
+    df-print: kable
+    number-sections: true
+    include-in-header:
+      - text: |
+          \usepackage[labelfont = bf]{caption}
+          \captionsetup{justification=raggedright,singlelinecheck=false, format=plain, font=footnotesize}
+          \usepackage[margin=1in]{geometry}
+          \KOMAoptions{headings=standardclasses}
+
 execute:
   include: false
   eval: true
@@ -15,41 +25,19 @@ library(ggplot2) # plotting
 theme_set(theme_bw()) # set default ggplot theme to black and white
 
 # Functions and file paths -----------------------------------------------------
-source(here('src', '00_functions.R'))
-
-## FVS directories ----
-fvs_dir <- file.path('C:', 'FVS', 'FVSSoftware')
-fvs_bin <- file.path(fvs_dir, 'FVSbin')
-fvs_rVer <- list.files(file.path(fvs_dir, 'R')) # R version used for naming dirs
-rFVS_dir <- file.path(fvs_dir, 'R', fvs_rVer, 'library') # rFVS location
-
-library('rFVS', lib.loc = rFVS_dir) # rFVS
-
-## Data directories and files ----
-fia_sql <- here('data', 'raw_data', 'SQLite_FIADB_MT.db')
-fvs_ready <- here('data', 'fvs_ready')
-fvs_runs <- here('data', 'fvs_runFiles')
-xlpath <- here('data', 'raw_data', 'lubrecht', 'comp_of_change_posted.xlsx')
-
-fvs_template <- here('data', 'raw_data', 'fvs_blank.xlsx')
-
-plot252 <- readxl::read_xlsx(xlpath, sheet = 'plot252') |>
-  dplyr::select(-Component)
-
-names(plot252) <- stringr::str_replace_all(names(plot252),
-                                           c(' ' = '',
-                                             '\\(' = '_',
-                                             '\\)' = '',
-                                             '\\/' = 'Per'))
-
-plot_locs <- read.csv(here('data', 'raw_data', 'lubrecht', 'lubrecht_plot_locations.csv'))
+source(here('scripts', 'lubrecht_scripts', '04_lubrecht_analysis.R'))
 ```
 
 
-The next order of business is to make these plot data "FVS-Ready."
 
-```{r}
-standInit <- readxl::read_xlsx(fvs_template, sheet = 'FVS_StandInit')
-treeInit <- readxl::read_xlsx(fvs_template, sheet = 'FVS_TreeInit')
-```
+## Introduction
+
+- Forest Growth and Yield models are important
+- 
+
+## Methods
+
+## Results
+
+## Discussion
 

@@ -656,7 +656,7 @@ Forest growth and yield models are widely used to guide management strategies fo
 
 The United States Forest Service's Forest Vegetation Simulator (FVS) is a forest growth and yield model that is used extensively across the United States [@crookston2005], yet many model evaluation studies have found inadequate model performance across several regional variants [@diaz2018; @cankaya2025; @ex2014; @swann2025]. Model performance may be improved by local calibration, which is a built-in routine that adjusts model coefficients based on tree growth data. However, tree growth data for calibration can be costly and time-consuming to collect or may be unavailable for the stand of interest. A potential solution to this problem is to use tree growth information from external data sources to calibrate FVS to local conditions, but this approach has not been broadly explored. One candidate dataset that provides nationwide coverage is the national Forest Inventory and Analysis National Forest Inventory, which contains hundreds of thousands of tree remeasurement records that can be used to estimate tree growth.
 
-In this work, I evaluate the Inland Empire variant of FVS (FVS-IE) and assess the efficacy of using the United States Forest Inventory and Analysis (FIA) National Forest Inventory data to calibrate FVS-IE using both traditional hypothesis testing and equivalence testing approaches. I found that uncalibrated FVS-IE consistently over-predicted tree diameter over a 10-year projection period. Calibration using independent FIA data reduced prediction errors. For all but the largest and smallest trees (5" $\leq$ DBH < 20"), this calibration method sufficiently reduced prediction error such that predictions can be considered equivalent to observed results.
+In this work, I evaluate the Inland Empire variant of FVS (FVS-IE) and assess the efficacy of using the United States Forest Inventory and Analysis (FIA) National Forest Inventory data to calibrate FVS-IE using both traditional hypothesis testing and equivalence testing approaches. I found that uncalibrated FVS-IE consistently over-predicted tree diameter over a 10-year projection period. Calibration using independent FIA data reduced prediction errors. For all but the largest and smallest trees (5" $\leq$ DBH \< 20"), this calibration method sufficiently reduced prediction error such that predictions can be considered equivalent to observed results.
 
 ## Methods
 
@@ -748,9 +748,9 @@ I conducted all analyses in R version `{r} paste0(version$major, '.', version$mi
 
 ## Results
 
-All calculated scale factors were $\leq$ 1 (@tbl-multipliers). Small trees (DBH < 5") of all species except *Abies lasiocarpa* and *Pseudotsuga mensiezii* were not adjusted with scale factors, so equivalence testing for the multiplier-calibrated model was carried out on trees between 5-20" DBH (group 1, tolerance = $\pm$ 0.1") and 20-41" DBH (group 2, tolerance = $\pm$ 0.2").
+All calculated scale factors were $\leq$ 1 (@tbl-multipliers). Small trees (DBH \< 5") of all species except *Abies lasiocarpa* and *Pseudotsuga mensiezii* were not adjusted with scale factors, so equivalence testing for the multiplier-calibrated model was carried out on trees between 5-20" DBH (group 1, tolerance = $\pm$ 0.1") and 20-41" DBH (group 2, tolerance = $\pm$ 0.2").
 
-:::{#tbl-multipliers}
+::: {#tbl-multipliers}
 ```{r}
 #| label: print-multipliers
 #| echo: false
@@ -768,12 +768,12 @@ mults_print <- mults |>
 mults_print
 ```
 
-Scale multipliers calculated using FVS-IE's built-in self-calibration feature. Sample size is the number of trees that FVS-IE used for to calculate the scale factor for each species-size class combination. All scale factors were $\leq$ 1. ABLA = *Abies lasiocarpa*; PICO = *Pinus contorta*; PIEN = *Picea engelmannii*; PIPO = *Pinus ponderosa*; PSME = *Pseudotsuga mensiezii*. 
+Scale multipliers calculated using FVS-IE's built-in self-calibration feature. Sample size is the number of trees that FVS-IE used for to calculate the scale factor for each species-size class combination. All scale factors were $\leq$ 1. ABLA = *Abies lasiocarpa*; PICO = *Pinus contorta*; PIEN = *Picea engelmannii*; PIPO = *Pinus ponderosa*; PSME = *Pseudotsuga mensiezii*.
 :::
 
 Uncalibrated FVS-IE projected DBH after 10 years was consistently greater than remeasured DBH (@fig-obs-pred\ignorespaces a, left). For both DBH groups, there was insufficient evidence to support equivalence within the given tolerances of $\pm$ 0.1" for the smaller DBH group and $\pm$ 0.2" for the larger group (Paired TOST; p = 1 for both groups). Moreover, mean uncalibrated prediction error was greater than 0 (@fig-obs-pred\ignorespaces b, left; mean $\pm$ se = 0.79+0.01; two-sided t-test: t = `{r} round(uc_diff_t$statistic, 3)`, *p* \< 2.2x10^-16^).
 
-Multiplier calibration reduced prediction error relative to uncalibrated predictions by `{r} round(uc_mult_t$estimate, 2)`in (@fig-obs-pred a; two-sided t-test: t = `{r} round(uc_mult_t$statistic, 3)`, *p* \< 2.2x10^-16^). For small group trees that were calibrated (i.e., 5 $\leq$ DBH < 20), there was sufficient evidence during equivalence testing to reject the null hypothesis of dissimilarity (paired TOST; *p* < 1.4x10^-10^) and conclude equivalence, though the difference was non-zero (mean $\pm$ se = 0.03 $\pm$ 0.01; two-sided t-test: t = `{r} round(uc_mult_lg_t$statistic, 3)`, *p* = 0.002). However, there was still insufficient evidence to support equivalence for the large DBH group (Paired TOST; *p* = 0.92 for large DBH group) and mean multiplier-calibrated prediction error was greater than 0 (@fig-obs-pred\ignorespaces b, right; mean $\pm$ se = 0.13 $\pm$ 0.01; two-sided t-test: t = `{r} round(mult_diff_t$statistic, 3)`, *p* 2.2x10^-16^).
+Multiplier calibration reduced prediction error relative to uncalibrated predictions by `{r} round(uc_mult_t$estimate, 2)`in (@fig-obs-pred a; two-sided t-test: t = `{r} round(uc_mult_t$statistic, 3)`, *p* \< 2.2x10^-16^). For small group trees that were calibrated (i.e., 5 $\leq$ DBH \< 20), there was sufficient evidence during equivalence testing to reject the null hypothesis of dissimilarity (paired TOST; *p* \< 1.4x10^-10^) and conclude equivalence, though the difference was non-zero (mean $\pm$ se = 0.03 $\pm$ 0.01; two-sided t-test: t = `{r} round(uc_mult_lg_t$statistic, 3)`, *p* = 0.002). However, there was still insufficient evidence to support equivalence for the large DBH group (Paired TOST; *p* = 0.92 for large DBH group) and mean multiplier-calibrated prediction error was greater than 0 (@fig-obs-pred\ignorespaces b, right; mean $\pm$ se = 0.13 $\pm$ 0.01; two-sided t-test: t = `{r} round(mult_diff_t$statistic, 3)`, *p* 2.2x10^-16^).
 
 ::: {#fig-obs-pred style="height: 200%"}
 ```{r}
@@ -791,9 +791,9 @@ pred_obs_plt/(err_hist+theme(strip.background = element_blank(),
 FVS-IE model performance with no calibration (left panels) and with calibration using multipliers from a different dataset (right panels). *(a)* Projected DBH vs remeasured DBH. The red line is the reference 1:1 line, where predictions = observations. Note that uncalibrated projections nearly all fall above the red line. *(b)* Error distributions for uncalibrated (left) and multiplier calibrated (right) DBH predictions. Red line is the mean error; dashed black line is the reference line at 0. Text is mean $\pm$ standard error (N = 3985 trees for both).
 :::
 
-Whereas the uncalibrated model tended to overpredict DBH for all species, the multiplier-calibrated model exhibited species-specific patterns for over- and under- prediction (@fig-pred-obs-spec). 
+Whereas the uncalibrated model tended to overpredict DBH for all species, the multiplier-calibrated model exhibited species-specific patterns for over- and under- prediction (@fig-pred-obs-spec).
 
-:::{#fig-pred-obs-spec}
+::: {#fig-pred-obs-spec}
 ```{r}
 #| label: print-fig-pred-obs-spec
 #| eval: TRUE
@@ -801,10 +801,9 @@ Whereas the uncalibrated model tended to overpredict DBH for all species, the mu
 #| include: TRUE
 pred_obs_spec_plt+theme(legend.position = 'none')
 ```
-FVS-IE model performance by species and calibration method (uncalibrated or multipliers calculated from a different dataset). The black line on each panel is the reference 1:1 line. Uncalibrated predictions (bottom row) are consistently greater than observed values. Multiplier-calibrated predictions (top row) generally align with observed values better, but smaller DBHs are underpredicted for some species. ABLA = *Abies lasiocarpa*; PICO = *Pinus contorta*; PIEN = *Picea engelmannii*; PIPO = *Pinus ponderosa*; PSME = *Pseudotsuga mensiezii*. 
 
+FVS-IE model performance by species and calibration method (uncalibrated or multipliers calculated from a different dataset). The black line on each panel is the reference 1:1 line. Uncalibrated predictions (bottom row) are consistently greater than observed values. Multiplier-calibrated predictions (top row) generally align with observed values better, but smaller DBHs are underpredicted for some species. ABLA = *Abies lasiocarpa*; PICO = *Pinus contorta*; PIEN = *Picea engelmannii*; PIPO = *Pinus ponderosa*; PSME = *Pseudotsuga mensiezii*.
 :::
-
 
 \newpage
 
