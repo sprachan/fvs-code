@@ -4,3 +4,8 @@ fvs-diagram/
 html/
 .Rproj.user
 *.db
+*.pdf
+*.png
+*.pptx
+*.bib
+*.csl

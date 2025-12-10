@@ -1,23 +1,39 @@
 ---
-title: "FVS Calibration with FIA Data"
-author: "Sejal Prachand"
+title: \large \bfseries Calibration from unexpected places
+subtitle: \normalsize \bfseries FIA data-based calibration improves FVS predictions on an independent dataset \vspace{-1.5em}
+author: \normalsize Sejal Prachand
 format: 
   pdf:
     documentclass: article
+    indent: true
     df-print: kable
     number-sections: true
+    fontsize: 12pt
     include-in-header:
       - text: |
           \usepackage[labelfont = bf]{caption}
           \captionsetup{justification=raggedright,singlelinecheck=false, format=plain, font=footnotesize}
           \usepackage[margin=1in]{geometry}
-          \KOMAoptions{headings=standardclasses}
+          \usepackage{titlesec}
+          \titleformat{\section}[hang]{\large\bfseries}{\thesection}{0.5em}{}
+          \titleformat{\subsection}[hang]{\normalfont \bfseries}{\thesubsection}{0.5em}{}
+          \titleformat{\subsubsection}[hang]{\normalfont \bfseries}{\thesubsubsection}{0.5em}{}
+          \usepackage{indentfirst}
+          \usepackage{setspace}
+          \doublespacing
+          \usepackage{amsmath}
+          \usepackage{amssymb}
 
 execute:
   include: false
   eval: true
   echo: false
+bibliography: references.bib
 ---
+```{=latex}
+\vspace{-1.5cm}
+```
+
 ```{r}
 # Packages ---------------------------------------------------------------------
 library(here) # makes file paths much easier
@@ -26,18 +42,192 @@ theme_set(theme_bw()) # set default ggplot theme to black and white
 
 # Functions and file paths -----------------------------------------------------
 source(here('scripts', 'lubrecht_scripts', '04_lubrecht_analysis.R'))
+source(here('scripts', '00_functions.R'))
 ```
 
 
 
 ## Introduction
 
-- Forest Growth and Yield models are important
-- 
+\indent Forest growth and yield models are essential tools for predicting future forest conditions under different management regimes [@weiskittel_forest_2011; @joo_roles_2025]. One extensively used growth and yield model is the United States Forest Services' Forest Vegetation Simulator (FVS) [@dixon_essential_2002; @crookston_forest_2005]. Because FVS can estimate forest carbon from a provided tree list, it has been used to assess management strategies for carbon sequestration [e.g., @diaz_tradeoffs_2018; @joo_roles_2025; @munro_challenges_2025] and is even mentioned in the California Air Resource Board FAQ for carbon offset protocol for US forests [@noauthor_arb_2013]. 
+
+\indent Despite its widespread use, FVS does not always produce accurate projections of tree growth and biomass accumulation [@cankaya_evaluating_2025; @froese_validation_2007; @bagdon_model_2021; @swann_evaluating_2025; @ex_evaluating_2014; @herbert_validation_2023; @diaz_tradeoffs_2018]. However, calibration (i.e., adjusting model predictions to the regional scale) can reduce model bias and improve predictive accuracy [e.g., @vandendriesche_fvs_2010; @diaz_tradeoffs_2018; @cankaya_evaluating_2025]. FVS has a built-in calibration routine (hereafter, "self-calibration") that adjusts growth models for unique species and size class combinations (e.g., large *Pinus ponderosa*, small *Abies lasiocarpa*) using diameter and height increment data provided with the input tree list [@dixon_essential_2002]. In addition, FVS provides a suite of optional keywords that can be used to adjust growth models before and after self-calibration [@dixon_essential_2002]. Some form of model calibration is necessary to produce the accurate predictions necessary to guiding management, even when there is insufficient growth increment data for FVS self-calibration. Thus, developing methods that use readily available, external growth data is a promising solution to improve FVS predictions to accurately guide management decisions.
+
+\indent The United States Forest Services' National Forest Inventory (NFI) data, collected as part of its Forest Inventory and Analysis program (FIA), is a publicly available source of tree growth data for forests across the country [@noauthor_forest_2024]. The FIA program is congressionally mandated to provide "current, consistent, and credible information about the status of forests and forest resources within the United States" [@us_forest_service_forest_2025]. NFI data are expected to be reasonably reflective of general forest growth conditions in locations across the entire United States and are therefore a candidate dataset for calibrating FVS in the absence of sufficient growth data for the stand of interest.
+
+\indent In this analysis, I assess the efficacy of using NFI data to calibrate the Forest Vegetation Simulator - Inland Empire variant (FVS-IE). I compared uncalibrated, NFI-calibrated, and self-calibrated FVS-IE predictions of diameter to each other and actual remeasurements using non-FIA forest inventory data from the Lubrecht experimental forest in western Montana, USA.
+
 
 ## Methods
+### Software
+\indent I conducted all analyses in R version `{r} paste0(version$major, '.', version$minor)`. I used `DBI` version `{r} packageVersion('DBI')` [@r_special_interest_group_2024] and `RSQLite` version `{r} packageVersion('RSQLite')` for working with FIA data in SQL tables [@muller_rsqlite_2025]; I used `rFVS` to run FVS [@us_forest_service_rfvs_2023]; `equivalence` version `{r} packageVersion('equivalence')` [@robinson_2025] for equivalence testing; `ggplot2` version `{r} packageVersion('ggplot2')` [@wickham_ggplot2_2016] and `patchwork` version `{r} packageVersion('patchwork')` for plotting [@pedersen_2025]; `terra` version `{r} packageVersion('terra')` [@hijmans_2025], `sf` version `{r} packageVersion('sf')` [@pebesma_sf_2018; @pebesma_sf_2023], and `usmap` version `{r} packageVersion('usmap')` [@di_lorenzo_usmap_2024] for mapping; `dplyr` version `{r} packageVersion('dplyr')` [@wickham_dplyr_2023] and `stringr` version `{r} packageVersion('stringr')` [@wickham_stringr_2023] for data wrangling; and `here` version `{r} packageVersion('here')` [@muller_2025_here] for project file management.
+
+
+### Datasets
+#### Lubrecht Carbon Plots
+\indent I obtained 2018 and 2023 tree measurement data from 270 plots in the University of Montana's Lubrecht Experimental Forest ($46^\circ$ 53' N, $113^\circ$ 26' W; @fig-study-site). These plots were initially established to collect data on carbon sequestration in the forest. Three plots were excluded from analysis because they did not contain any trees that were "growable" (i.e., alive) in FVS (tree history code > 6), so I analyzed a total of 267 plots containing a total of 4,140 tree records. I filtered records to trees that were > 3" DBH (see discussion in the "Forest Vegetation Simulator" section, below), leaving 3,582 trees for analysis.
+
+#### Forest Inventory and Analysis Data
+\indent I downloaded Forest Inventory and Analysis National Forest Inventory data (hereafter, "NFI data") for the state of Montana from the FIA Datamart Website. I then selected only FIA plots that fell in the same ecoregions as Lubrecht (M332Bg [Garnet/Sapphire Mountains] and M332Bl [Clark Fork Valley and Mountains] from @cleland_ecological_2007), were at least 75% forested, and were publicly owned. This resulted in a total of 70 plots with a total of 2,755 trees.
+
+:::{#fig-study-site}
+```{r}
+#| include: true
+#| echo: false
+#| fig-pos: 'ht'
+composite_map
+```
+Study site. Black dots are Forest Inventory and Analysis National Forest Inventory plots. Note that locations are slightly "fuzzed." Red shading represents the area covered by Lubrecht plots. Inset shows study site location (black) within the state of Montana.
+
+:::
+
+
+
+
+### Forest Vegetation Simulator-Inland Empire Variant (FVS-IE)
+\indent FVS-IE is a distance-independent, individual tree growth model [@dixon_essential_2002]. FVS-IE uses different models for small (< 3" DBH) and large (DBH $\geq$ 3") trees [@dixon_essential_2002; @fvs_staff_inland_2021]. Here, I restrict my analysis to large trees only. In these trees, diameter growth is modeled first (Equation 1).
+
+```{=latex}
+\begin{equation}
+  \begin{aligned}
+  \ln(DDS) = b_1 &+ b_2EL + b_3EL^2 + b_4SL\sin(ASP) + b_5SL\cos(ASP) + b_6SL + b_7SL^2 \\ 
+  &+ b_8 * \frac{CCF}{100} + b_9\ln(DBH) + b_{10}\frac{BAL}{100} + b_{11}CR + b_{12}CR^2 \\
+  &+ b_{13}DBH^2 + b_{14}\frac{BAL}{100 \ln(DBH + 1.0)} + b_{15}SI + HAB
+  \end{aligned}
+\end{equation}
+```
+
+\noindent Where DDS is change in (inside bark diameter)^2^; HAB is a habitat-type intercept; CCF is crown competition factor; BAL is basal area in trees larger than the subject tree; SL is stand slope; ASP is stand aspect; EL is stand elevation; CR is crown ratio; and SI is species site index. All coefficients $b_i$ are species-specific except $b_1$ which is location-specific [@fvs_staff_inland_2021]
+
+\indent FVS self-calibration uses growth increment data. These data are provided alongside a growth measurement interval $X$, the number of years the growth was observed in. FVS then imputes what the stand looked like $X$ years ago, projects this stand forward $X$ years, and compares predicted DBH and height values with inputted DBH and height values. Scale factors for each species and size class combination with at least 5 representative trees are then calculated as the weighted average between $\text{median}(\frac{\text{observed}}{\text{predicted}})$ and 1 [@dixon_essential_2002]. These factors are added to equation (1), thus acting as multipliers on squared inside bark diameter. This scale factor attenuates over time with a half-life of 25 years [@dixon_essential_2002]. FVS requires a minimum of 5 trees in order to calculate scale factors, so not all species present will necessarily have associated growth multipliers.
+
+\indent FVS users may also supply species-specific growth multipliers that are applied before self-calibration (if self-calibration occurs). These multipliers are added as intercepts to equation (1) and they do not attenuate over time.
+
+
+### Growth Projections
+
+\indent I used FVS' built-in self-calibration to calculate growth multipliers from NFI data. I input NFI data with associated diameter and height growth information into FVS (keyword GROWTH 1 10 1 10 10), then used FVS to project stands forward the default cycle length of 10 years. I extracted growth multipliers from the "CalibStats" output table (column "ReadCorMult"), and averaged these values by species across all plots.
+
+\indent To assess calibration impacts, I ran three sets of growth projections using 2018 Lubrecht plot data to supply the initial tree list each time. In all projections, I turned tripling and regeneration off (keywords NOTRIPLE and NOAUTOES, respectively), and I ran the projection for 5 years (keywords NUMCYCLE 1 and CYCLEAT 2023). To establish a baseline for model performance, the first projection was uncalibrated (inserted keyword NOCALIB and NOHTDREG). Then, I used FVS' built in self-calibration feature, supplying diameter and height growth information obtained from the 2023 remeasurement (keyword GROWTH 3 5 3 5). Notably, these data enable exact prediction of 2023 diameter and height growth by simply adding the growth increment to the 2018 measurement. Finally, I turned off FVS self-calibration (keywords NOCALIB and NOHTDREG) and supplied the NFI-derived growth multipliers to FVS (keywords READCORD and READCORR) to generate NFI-calibrated predictions.
+
+### Statistical Analysis
+
+\indent I calculated DBH prediction error for large trees (>3" DBH) for all projections (uncalibrated, self-calibrated, and NFI-calibrated) as:
+
+$$
+e = \text{DBH}_{2023, \text{ observed}} - \widehat{\text{DBH}}_{2023, \text{ FVS}}
+$$
+
+I tested two sets of hypotheses about prediction error.
+
+```{=latex}
+Set 1 $\begin{cases}
+H_0: &\overline e \not\in [-\epsilon, \epsilon] \\
+       H_A: &\overline e \in [-\epsilon, \epsilon]
+\end{cases} $
+
+Set 2 $\begin{cases}
+H_0: &\overline e = 0 \\
+       H_A: &\overline e \neq 0
+\end{cases}
+$
+
+```
+
+Hypothesis set 1 frames a test for equivalence (i.e., that predictions are the same as measurements). Under hypothesis set 1, the test procedure assumes that the prediction error is non-negligible (i.e., outside some region of indifference [$-\epsilon, \epsilon$] where errors within that region are considered negligible). Thus, sufficient evidence to reject the null under this procedure is evidence for statistical equivalence: that the prediction errors are negligible. To test these hypotheses, I used a two one-sided t-test (TOST) equivalence testing approach [@robinson_model_2004; @wellek_testing_2010]. I used a $\epsilon = \pm 0.2''$ for larger trees. In contrast, hypothesis set 2 frames a test for difference in the traditional null hypothesis statistical testing framework. I used two-sided t-tests to assess if mean prediction error was different from 0. 
+
+Using these complementary hypotheses tests allowed me to make statistically-supported statements about both equivalence and difference between predictions and remeasurements.
 
 ## Results
+\indent Of the 10 species present in Lubrecht data, eight had calculated scale factors from plot data, NFI data, or both. Five species had multipliers available from both NFI and Lubrecht plot data; one species had Lubrecht multipliers only; and two species had NFI multipliers only (@tbl-scale-factors). For groups that had NFI and self calibration multipliers, estimated adjustments were similar between estimation sources (max difference $\pm 0.07$; @tbl-scale-factors). Calibrated growth rates for softwoods were generally less than half of uncalibrated growth rates, with the exception of *Larix occidentalis*. In contrast, *Populus tremuloides* had a NFI-based growth multiplier of 1.68 (@tbl-scale-factors).
+
+:::{#tbl-scale-factors}
+```{r}
+#| label: print-multipliers
+#| echo: false
+#| include: true
+spec <- dplyr::filter(fvs_spcd(here('data', 'raw_data', 'SQLite_FIADB_MT.db')),
+                      fia_cd %in% lub_treelist2018$SPECIES)
+
+mults_print <- as.data.frame(comp_mults) |>
+  dplyr::filter(SpeciesPLANTS %in% spec$sp_abb,
+                TreeSize == 'LG') |>
+  dplyr::arrange(SpeciesPLANTS) |>
+  dplyr::select(-avgScaleFactor_fia, -avgReadCorMult_self, -TreeSize) |>
+  dplyr::relocate(n_self, .before = n_fia) |>
+  dplyr::relocate(avgReadCorMult_fia, .after = avgScaleFactor_self) |>
+  dplyr::rename(Species = SpeciesPLANTS,
+                `N (NFI)` = n_fia,
+                `NFI Multiplier` = avgReadCorMult_fia,
+                `N (self)` = n_self,
+                `Self Calibration Factor` = avgScaleFactor_self)
+
+for(i in 1:ncol(mults_print)){
+  if(typeof(mults_print[,i]) == 'double'){
+    mults_print[,i] <- round(mults_print[,i], 2)
+  }
+}
+
+mults_print[is.na(mults_print)] <- '-'
+mults_print
+```
+Scale factors and growth multipliers used for calibration. "LG" = large trees ($\geq$ 3" DBH); "SM" = small trees (<3" DBH); N (NFI) = number of trees used to calculate multipliers from NFI data; N (self) = number of trees used to calculate scale factors from Lubrecht data. ABGR = *Abies grandifolia*, ABLA = *Abies lasiocarpa*, LAOC = *Larix occidentalis*, PICO = *Pinus contorta*,  PIEN = *Picea engelmannii*, PIPO = *Pinus ponderosa*, POTR5 = *Populus tremuloides*,  PSME = *Pseudotsuga menziesii*.
+
+:::
+
+Uncalibrated FVS generally over-predicted DBH, and this over-prediction was generally worse for smaller trees (@fig-comp-plt\ignorespaces a). Both self-calibrated and NFI-calibrated DBH predictions were better aligned with measured DBH (@fig-comp-plt\ignorespaces b, c).
+
+:::{#fig-comp-plt}
+```{r}
+#| include: true
+#| echo: false
+#| fig-width: 5
+#| fig-height: 5
+#| fig-pos: 'ht'
+
+suppressWarnings(print(comp_plt&theme(axis.text = element_text(size = 8),
+                                      axis.title = element_text(size = 10))))
+
+```
+
+FVS-predicted DBH (in) vs remeasured DBH (in) for (a) uncalibrated FVS, (b) self-calibrated FVS, and (c) NFI-calibrated FVS. Red line is the 1:1 reference line.
+
+:::
+
+
+Both self-calibration and NFI had lower mean prediction error than uncalibrated FVS by nearly 0.6" (@fig-error-hist; two-sided t-tests for self-calibration error vs uncalibrated error and NFI error vs uncalibrated error were both highly significant at the $\alpha$ = 0.05 level). In contrast, prediction error did not differ significantly between self-calibrated predictions and NFI-calibrated predictions (@fig-error-hist; two-sided t-test, t = 0.06, p = 0.95).
+
+
+:::{#fig-error-hist}
+```{r}
+#| include: true
+#| echo: false
+#| fig-width: 6
+#| fig-pos: 'ht'
+suppressWarnings(print(err_hist_plt&theme(axis.text = element_text(size = 8),
+                                      axis.title = element_text(size = 10))))
+```
+DBH prediction error distributions for (a) uncalibrated, (b) self-calibrated, and (c) NFI-calibrated FVS. Red vertical line is a reference line at 0 (observed = predicted); dashed black line is at mean prediction error. NFI and self-calibrated FVS had smaller mean prediction errors than uncalibrated FVS.
+
+:::
+
+
+Mean uncalibrated FVS predictions were not equivalent to measured DBH (TOST; 95\% confidence interval = (0.69, 0.72); p = 1) and they were significantly different from 0 (two-sided t-test; mean = 0.70, t = 85.85, p < 0.05). In contrast, self-calibrated and NFI-calibrated predictions were equivalent to measured DBH (self-calibrated TOST: 95\% confidence interval = (0.07, 0.09), p < 0.05; NFI-calibrated TOST: 95\% confidence interval = (0.08, 0.09), p < 0.05). However, both calibrated prediction means were significantly different from 0 (two-sided t-test, self-calibrated FVS: mean = 0.08, t = 12.97, p < 0.05; two-sided t-test, NFI calibrated model: mean = 0.09, t = 15.40, p < 0.05).
+
+
+
+
+\newpage
 
 ## Discussion
+\indent Using FVS' self-calibration feature and NFI-based calibration substantially reduced FVS prediction error relative to the uncalibrated model. All models systematically over-predicted DBH (mean prediction error > 0), but the bias in calibrated models was small enough that predictions were still considered equivalent to remeasurements at the defined tolerance level of 0.2". 
+
+\indent The similarity between self-calibrated and NFI-calibrated prediction error distributions is particularly striking considering that the diameter growth data provided for self-calibration were calculated using the 5-year remeasurement values used to evaluate growth predictions. Thus, these results show that NFI-based calibration can be highly effective in reducing model bias in contexts where growth data is unavailable. Though further testing is needed, these results indicate that external data sources could be a valuable asset for improving forest growth and yield model predictions in the absence of internal growth measurements.
+
+
+## References
+\singlespacing
+:::{#refs}
+
+:::
 
