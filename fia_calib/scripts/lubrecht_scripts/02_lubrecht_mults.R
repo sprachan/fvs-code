@@ -8,7 +8,7 @@
 # Packages and functions -------------------------------------------------------
 library(here) # makes file paths much easier
 
-source(here('src', '00_functions.R'))
+source(here('scripts', '00_functions.R'))
 
 # File paths -----------------------------------------------------
 ## FVS directories ----
@@ -156,3 +156,6 @@ saveRDS(selfcalib_proj$summary,
         file = here(sim_out, 'lubcalib_summary.RData'))
 saveRDS(selfcalib_proj$calibstats,
         file = here(sim_out, 'lubcalib_calbstat.RData'))
+
+saveRDS(stand_init_lolo,
+        file = here('data', 'raw_data', 'lubrecht', 'fia_plots.RData'))
