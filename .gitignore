@@ -9,3 +9,6 @@ html/
 *.pptx
 *.bib
 *.csl
+fia_calib/labnotes/
+fia_calib/reports/
+misc_code/
