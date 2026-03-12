@@ -43,17 +43,12 @@ fia_calib
 |   |-- fors591
 |   
 |-- scripts
-|   | R scripts that make up the core of analysis. These are what may eventually
-|   | become a package. Note that analysis for fors538 is also in the report PDF.
+|   | R scripts that make up the core of analysis. Note that analysis for fors538 is also in the report PDF.
 |   |-- lubrecht_scripts
 |   |   |-- 01_lubrecht_prep
 |   |   |-- 02_lubrecht_mults
 |   |   |-- 03_lubrecht_project
 |   |   |-- 04_lubrecht_analysis
-|   |-- 00_functions.R
-|   |-- 01_setup.R
-|   |-- 02_fia2fvs.R
-|   |-- 03_projectPlots.R
 |
 |-- labnotes*
 |   | Quarto documents that contain code , notes, descriptions of data and
@@ -65,30 +60,3 @@ fia_calib
 |-- fia_calib.RProj
 |-- README.md
 ```
-
-## Functions
-
-## Setup
-
-- To be sourced at the beginning of every script
-- Set FVS and FIA file paths
-- Load rFVS
-
-## fia2fvs
-*This could be made a function*
-
-- Connect FIA DB
-- Subset FIA data
-- Use get_FIA to extract tree and stand tables for FVS input
-- Assign plots and trees unique identifiers
-- Write resulting files to RDS
-
-## projectPlots
-*This could be made a function*
-
-- Load data
-- Initialize FVS
-- Write keyword and .tre files with write.FVSfiles
-- Grow the stand
-- Get tree lists
-- combine projections with initial and map species
