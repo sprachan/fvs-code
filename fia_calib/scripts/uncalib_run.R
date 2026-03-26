@@ -27,7 +27,8 @@ standInit <- readRDS(here('data', 'fvs_ready', 'FVS_StandInit_MTID.rds')) |>
 
 treeInit <- readRDS(here('data', 'fvs_ready', 'FVS_TreeInit_MTID.rds')) |>
   inner_join(standInit[c('STAND_CN', 'INV_YEAR', 'REM_CD', 'N_REM')], 
-             by = 'STAND_CN')
+             by = 'STAND_CN') |>
+  filter(HISTORY == 1) # only live trees
 
 t0_stands <- standInit |>
   dplyr::filter(N_REM >= 1, REM_CD == 0) |>
@@ -57,9 +58,9 @@ future::plan('multisession', workers = 5)
 
 
 sim <- run_FVS_parallel(t0_stands, t0_trees, n_batches = 4, simple_output = TRUE, 
-                     out_dir = out_dir, fvs_bin = fvs_bin, years_out = num_years,
-                     triple = triple, calibrate = calibrate, add_regen = regen,
-                     STDIDENT = STDIDENT, random_seed = random_seed)
+                        out_dir = out_dir, fvs_bin = fvs_bin, years_out = num_years,
+                        triple = triple, calibrate = calibrate, add_regen = regen,
+                        STDIDENT = STDIDENT, random_seed = random_seed)
 
 saveRDS(sim$tree_list, file = here('data', 'sim_outputs', 'uc_trees_MTID.rds'))
 saveRDS(sim$summary, file = here('data', 'sim_outputs', 'uc_summary_MTID.rds'))
