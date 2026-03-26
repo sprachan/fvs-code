@@ -26,7 +26,6 @@ standInit <- readRDS(here('data', 'fvs_ready', 'FVS_StandInit_MTID.rds')) |>
   dplyr::filter(VARIANT == 'IE')
 
 treeInit <- readRDS(here('data', 'fvs_ready', 'FVS_TreeInit_MTID.rds')) |>
-  dplyr::filter() |>
   inner_join(standInit[c('STAND_CN', 'INV_YEAR', 'REM_CD', 'N_REM')], 
              by = 'STAND_CN')
 
