@@ -28,7 +28,8 @@ standInit <- readRDS(here('data', 'fvs_ready', 'FVS_StandInit_MTID.rds')) |>
 treeInit <- readRDS(here('data', 'fvs_ready', 'FVS_TreeInit_MTID.rds')) |>
   inner_join(standInit[c('STAND_CN', 'INV_YEAR', 'REM_CD', 'N_REM')], 
              by = 'STAND_CN') |>
-  filter(HISTORY == 1) # only live trees
+  filter(HISTORY == 1, # only live trees
+         SPECIES %in% c(202, 73)) # only Doug fir and western larch
 
 t0_stands <- standInit |>
   dplyr::filter(N_REM >= 1, REM_CD == 0) |>
