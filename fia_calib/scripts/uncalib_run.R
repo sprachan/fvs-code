@@ -32,8 +32,11 @@ treeInit <- readRDS(here('data', 'fvs_ready', 'FVS_TreeInit_MTID.rds')) |>
          SPECIES %in% c(202, 73)) # only Doug fir and western larch
 
 t0_stands <- standInit |>
-  dplyr::filter(N_REM >= 1, REM_CD == 0) |>
-  dplyr::select(-N_REM, -REM_CD) |>
+  dplyr::filter(N_REM >= 1) |>
+  dplyr::group_by(PID) |>
+  dplyr::mutate(REM_YEAR = ifelse(N_REM == 1, max(INV_YEAR), INV_YEAR[2])) |>
+  dplyr::ungroup() |>
+  dplyr::filter(REM_CD == 0) |>
   as.data.frame()
 
 # only want trees associated with selected stands
@@ -59,8 +62,10 @@ future::plan('multisession', workers = 5)
 
 
 sim <- run_FVS_parallel(t0_stands, t0_trees, n_batches = 4, simple_output = TRUE, 
-                        out_dir = out_dir, fvs_bin = fvs_bin, years_out = num_years,
-                        triple = triple, calibrate = calibrate, add_regen = regen,
+                        out_dir = out_dir, fvs_bin = fvs_bin, 
+                        year_col = 'REM_YEAR',
+                        proj_len = num_years, triple = triple,
+                        calibrate = calibrate, add_regen = regen,
                         STDIDENT = STDIDENT, random_seed = random_seed)
 
 saveRDS(sim$tree_list, file = here('data', 'sim_outputs', 'uc_trees_MTID.rds'))
