@@ -15,41 +15,7 @@ library(here)
 library(rstan)
 
 # Prepare data -----------------------------------------------------------------
-tree_list <- readRDS(here('data', 'sim_outputs', 'uc_trees_MTID.rds')) 
-
-tl_fvs <- tree_list |>
-  dplyr::group_by(PID) |>
-  dplyr::mutate(REM_CD = dplyr::case_when(year == min(year) ~ 0,
-                                          year == max(year) ~ 1,
-                                          .default = NA)) |>
-  dplyr::ungroup()
-
-standInit <- readRDS(here('data', 'fvs_ready', 'FVS_StandInit_MTID.rds')) |>
-  dplyr::filter(VARIANT == 'IE')
-tl_fia <- readRDS(here('data', 'fvs_ready', 'FVS_TreeInit_MTID.rds')) |>
-  dplyr::left_join(standInit[c('STAND_CN', 'INV_YEAR', 'REM_CD', 'N_REM')],
-            by = 'STAND_CN') |>
-  dplyr::filter(TUID %in% tl_fvs$TUID)
-
-
-
-# for name matching
-tl_fvs$DIAMETER <- tl_fvs$dbh
-tl_fvs$YEAR <- tl_fvs$year
-tl_fia$YEAR <- tl_fia$INV_YEAR
-
-compare_wide <- dplyr::full_join(tl_fvs[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
-                                 tl_fia[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
-                                 by = c('TUID', 'REM_CD', 'PID'),
-                                 suffix = c('_FVS', '_FIA'))
-compare_growth <- compare_wide |>
-  dplyr::group_by(TUID, PID) |>
-  dplyr::summarize(growth_pd_FVS = YEAR_FVS[2]-YEAR_FVS[1],
-                   growth_pd_FIA = YEAR_FIA[2]-YEAR_FIA[1],
-                   dg_FVS = DIAMETER_FVS[2]-DIAMETER_FVS[1],
-                   dg_FIA = round(DIAMETER_FIA[2]-DIAMETER_FIA[1], 2)) |>
-  dplyr::filter(dg_FIA >= 0) |>
-  dplyr::ungroup()
+compare_growth <- readRDS(here('data', 'sim_outputs', 'uc_compare_growth.rds'))
 
 # Run model --------------------------------------------------------------------
 # Initialize Stan Model: translate to C++, compile C++ to DSO, then load.

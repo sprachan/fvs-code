@@ -70,3 +70,34 @@ sim <- run_FVS_parallel(t0_stands, t0_trees, n_batches = 4, simple_output = TRUE
 
 saveRDS(sim$tree_list, file = here('data', 'sim_outputs', 'uc_trees_MTID.rds'))
 saveRDS(sim$summary, file = here('data', 'sim_outputs', 'uc_summary_MTID.rds'))
+
+# dataframe with diameter growth from this projection vs remeasurements
+tl_fvs <- sim$tree_list |>
+  dplyr::group_by(PID) |>
+  dplyr::mutate(REM_CD = dplyr::case_when(year == min(year) ~ 0,
+                                          year == max(year) ~ 1,
+                                          .default = NA)) |>
+  dplyr::ungroup()
+tl_fia <- readRDS(here('data', 'fvs_ready', 'FVS_TreeInit_MTID.rds')) |>
+  dplyr::left_join(standInit[c('STAND_CN', 'INV_YEAR', 'REM_CD', 'N_REM')],
+                   by = 'STAND_CN') |>
+  dplyr::filter(TUID %in% tl_fvs$TUID)
+
+# for name matching
+tl_fvs$DIAMETER <- tl_fvs$dbh
+tl_fvs$YEAR <- tl_fvs$year
+tl_fia$YEAR <- tl_fia$INV_YEAR
+
+compare_growth <- dplyr::full_join(tl_fvs[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
+                                   tl_fia[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
+                                   by = c('TUID', 'REM_CD', 'PID'),
+                                   suffix = c('_FVS', '_FIA')) |>
+  dplyr::group_by(TUID, PID) |>
+  dplyr::summarize(growth_pd_FVS = YEAR_FVS[2]-YEAR_FVS[1],
+                   growth_pd_FIA = YEAR_FIA[2]-YEAR_FIA[1],
+                   dg_FVS = DIAMETER_FVS[2]-DIAMETER_FVS[1],
+                   dg_FIA = round(DIAMETER_FIA[2]-DIAMETER_FIA[1], 2)) |>
+  dplyr::filter(dg_FIA >= 0) |>
+  dplyr::ungroup()
+
+saveRDS(compare_growth, file = here('data', 'sim_outputs', 'uc_compare_growth.rds'))
