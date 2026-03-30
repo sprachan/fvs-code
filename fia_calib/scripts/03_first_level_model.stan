@@ -4,9 +4,6 @@
 //
 
 // The input data are vectors 'dg_fvs' and 'dg_fia' of length 'N'.
-// Reparameterization help from Claude AI:
-// We assume constant coefficient of variation, which is given in the Gamma with
-// cv = 1/sqrt(alpha). This means that variance scales with mean, which we expect.
 
 // Stan doesn't allow 0 values in the gamma. Following the "integrating out"
 // method from https://mc-stan.org/docs/stan-users-guide/truncation-censoring.html#censored.section
@@ -15,10 +12,9 @@ functions{
   real gamma_zeroes_lpdf(vector y, vector shape, vector rate){
     vector [num_elements(y)] llk;
     for(i in 1:num_elements(y)){
-        // Recorded DG of 0 could actually be from 0" to 0.05"; recorded DG = 1"
-        // could actually be from 0.05" to 1". Thus, we want to give the 
-        // cumulative probability that DG is in [0, 0.05] (first case)
-        // or [0.05, 1] (second case)
+        // Recorded DG of 0 could actually be from 0" to 0.05".
+        // Thus, we want to give the cumulative probability that DG is in 
+        // [0, 0.05] 
       if (y[i] == 0) 
         // recorded DG = 0 means actual could be anywhere from 0-0.05.
         llk[i] = gamma_lcdf(0.05|shape[i], rate[i]); 
