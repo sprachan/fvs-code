@@ -19,7 +19,7 @@ compare_growth <- readRDS(here('data', 'sim_outputs', 'uc_compare_growth.rds'))
 
 # Run model --------------------------------------------------------------------
 # Initialize Stan Model: translate to C++, compile C++ to DSO, then load.
-mod <- stan_model(file = here('scripts', 'first_level_model.stan'))
+mod <- stan_model(file = here('scripts', '03first_level_model.stan'))
 
 # stan expects data object to be named list with N (sample size), dg_fvs (vector),
 #> and dg_fia (vector)
