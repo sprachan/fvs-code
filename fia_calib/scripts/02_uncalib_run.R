@@ -96,7 +96,8 @@ compare_growth <- dplyr::full_join(tl_fvs[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD'
   dplyr::summarize(growth_pd_FVS = YEAR_FVS[2]-YEAR_FVS[1],
                    growth_pd_FIA = YEAR_FIA[2]-YEAR_FIA[1],
                    dg_FVS = DIAMETER_FVS[2]-DIAMETER_FVS[1],
-                   dg_FIA = round(DIAMETER_FIA[2]-DIAMETER_FIA[1], 2)) |>
+                   dg_FIA = round(DIAMETER_FIA[2]-DIAMETER_FIA[1], 2),
+                   initial_dbh = DIAMETER_FIA[1]) |>
   dplyr::filter(dg_FIA >= 0) |>
   dplyr::ungroup()
 
