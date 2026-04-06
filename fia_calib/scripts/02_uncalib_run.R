@@ -28,7 +28,7 @@ standInit <- readRDS(here('data', 'fvs_ready', 'FVS_StandInit_MTID.rds')) |>
 treeInit <- readRDS(here('data', 'fvs_ready', 'FVS_TreeInit_MTID.rds')) |>
   inner_join(standInit[c('STAND_CN', 'INV_YEAR', 'REM_CD', 'N_REM')], 
              by = 'STAND_CN') |>
-  filter(HISTORY == 1, # only live trees
+  filter(DAMAGE1 == 0|is.na(DAMAGE1),
          SPECIES %in% c(202, 73)) # only Doug fir and western larch
 
 t0_stands <- standInit |>
@@ -41,7 +41,8 @@ t0_stands <- standInit |>
 
 # only want trees associated with selected stands
 t0_trees <- treeInit |>
-  inner_join(t0_stands['STAND_CN'], by = 'STAND_CN')
+  inner_join(t0_stands['STAND_CN'], by = 'STAND_CN') |>
+  filter(HISTORY == 1) # alive at first remeasurement only, don't want to project dead trees
 
 # Projection parameters
 num_years <- 11
