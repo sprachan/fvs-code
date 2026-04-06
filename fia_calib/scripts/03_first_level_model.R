@@ -15,11 +15,12 @@ library(here)
 library(rstan)
 
 # Prepare data -----------------------------------------------------------------
-compare_growth <- readRDS(here('data', 'sim_outputs', 'uc_compare_growth.rds'))
+compare_growth <- readRDS(here('data', 'sim_outputs', 'uc_compare_growth.rds')) |>
+  dplyr::filter(initial_dbh >= 3)
 
 # Run model --------------------------------------------------------------------
 # Initialize Stan Model: translate to C++, compile C++ to DSO, then load.
-mod <- stan_model(file = here('scripts', '03first_level_model.stan'))
+mod <- stan_model(file = here('scripts', '03_first_level_model.stan'))
 
 # stan expects data object to be named list with N (sample size), dg_fvs (vector),
 #> and dg_fia (vector)
