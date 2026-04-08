@@ -44,7 +44,7 @@ FVS_standInit <- dplyr::bind_rows(fvs_ready$MT$FVS_StandInit,
   dplyr::arrange(PID, INV_YEAR) |>
   dplyr::group_by(PID) |>
   dplyr::mutate(REM_CD = dplyr::case_when(INV_YEAR == min(INV_YEAR) ~ 0,
-                            n() == 2 ~ 1,
+                            dplyr::n() == 2 ~ 1,
                             INV_YEAR == max(INV_YEAR) ~ 2,
                             INV_YEAR != max(INV_YEAR) ~ 1,
                             .default = NA),
