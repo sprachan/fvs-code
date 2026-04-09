@@ -15,3 +15,5 @@ misc_code/
 fia_calib/scripts/superceded/
 fia_calib/data/raw_data/
 fia_calib/data/fvs_runFiles/
+fia_calib/data/sim_outputs/
+fia_calib/data/env_data
