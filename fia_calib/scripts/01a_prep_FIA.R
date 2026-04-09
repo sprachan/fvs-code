@@ -13,6 +13,7 @@
 
 library(rFVSIEtools)
 library(here)
+library(dplyr)
 
 # Data directories and files
 fia_path <- here('data', 'raw_data', 'fia')
@@ -26,34 +27,32 @@ for(i in seq_along(states)){
   conn <- DBI::dbConnect(RSQLite::SQLite(),
                          db_path)
   cond_subset <- conn |>
-    dplyr::tbl('COND') |> # condition table: tells us condition
-    dplyr::filter(COND_STATUS_CD == 1, 
-                  CONDPROP_UNADJ >= 0.75, 
+    tbl('COND') |> # condition table: tells us condition
+    filter(COND_STATUS_CD == 1, 
+                  CONDPROP_UNADJ == 1, 
                   INVYR > 2001,  
                   DSTRBCD1 == 0,
                   TRTCD1 == 0) |>
-    dplyr::collect()
+    collect()
   DBI::dbDisconnect(conn)
   
   fvs_ready[[i]] <- get_FIA_state(db_path, cond_subset, add_identifier = TRUE)
 }
 
 # Process
-FVS_standInit <- dplyr::bind_rows(fvs_ready$MT$FVS_StandInit,
-                                  fvs_ready$ID$FVS_StandInit) |>
-  dplyr::arrange(PID, INV_YEAR) |>
-  dplyr::group_by(PID) |>
-  dplyr::mutate(REM_CD = dplyr::case_when(INV_YEAR == min(INV_YEAR) ~ 0,
-                            dplyr::n() == 2 ~ 1,
-                            INV_YEAR == max(INV_YEAR) ~ 2,
-                            INV_YEAR != max(INV_YEAR) ~ 1,
-                            .default = NA),
+FVS_standInit <- bind_rows(fvs_ready$MT$FVS_StandInit,
+                           fvs_ready$ID$FVS_StandInit) |>
+  arrange(PID, INV_YEAR) |>
+  group_by(PID) |>
+  mutate(REM_CD = seq(0, n()-1),
          N_REM = max(REM_CD),
          FOREST = stringr::str_pad(FOREST, 2, pad = '0', side = 'left')) |>
-  dplyr::ungroup()
+  ungroup()
 
-FVS_treeInit <- dplyr::bind_rows(fvs_ready$MT$FVS_TreeInit,
-                                 fvs_ready$ID$FVS_TreeInit)
+FVS_treeInit <- bind_rows(fvs_ready$MT$FVS_TreeInit,
+                                 fvs_ready$ID$FVS_TreeInit) |>
+  left_join(FVS_standInit[c('PID', 'INV_YEAR', 'REM_CD',  'N_REM')],
+            by = c('PID', 'INV_YEAR'))
 
 # Save processed data
 saveRDS(FVS_standInit, file = here('data', 'fvs_ready', 'FVS_StandInit_MTID.rds'))
