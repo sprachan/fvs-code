@@ -26,8 +26,6 @@ standInit <- readRDS(here('data', 'fvs_ready', 'FVS_StandInit_MTID.rds')) |>
   dplyr::filter(VARIANT == 'IE')
 
 treeInit <- readRDS(here('data', 'fvs_ready', 'FVS_TreeInit_MTID.rds')) |>
-  inner_join(standInit[c('STAND_CN', 'INV_YEAR', 'REM_CD', 'N_REM')], 
-             by = 'STAND_CN') |>
   filter(DAMAGE1 == 0|is.na(DAMAGE1),
          SPECIES %in% c(202, 73)) # only Doug fir and western larch
 
@@ -92,16 +90,18 @@ tl_fvs$YEAR <- tl_fvs$year
 tl_fia$YEAR <- tl_fia$INV_YEAR
 
 compare_growth <- dplyr::full_join(tl_fvs[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
-                                   tl_fia[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID', 'HISTORY', 'DAMAGE1')], 
+                                   tl_fia[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID', 'HISTORY', 'DAMAGE1', 'SPECIES')], 
                                    by = c('TUID', 'REM_CD', 'PID', 'YEAR'),
                                    suffix = c('_FVS', '_FIA')) |>
-  dplyr::group_by(TUID, PID) |>
+  dplyr::filter(REM_CD %in% c(0, 1)) |>
+  dplyr::group_by(TUID, PID, SPECIES) |>
   dplyr::summarize(growth_pd = YEAR[2]-YEAR[1],
                    status_1 = HISTORY[1],
                    status_2 = HISTORY[2],
                    dg_FVS = DIAMETER_FVS[2]-DIAMETER_FVS[1],
                    dg_FIA = round(DIAMETER_FIA[2]-DIAMETER_FIA[1], 2),
                    initial_dbh = DIAMETER_FIA[1]) |>
+  filter(dg_FIA >= 0) |>
   dplyr::ungroup()
 
 saveRDS(compare_growth, file = here('data', 'sim_outputs', 'uc_compare_growth.rds'))
