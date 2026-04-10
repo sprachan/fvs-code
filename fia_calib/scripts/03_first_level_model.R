@@ -5,7 +5,9 @@
 #> with mean scale factor*fvs prediction and some standard deviation. The goal
 #> is to sample the posterior distribution of the scale factor.
 #> 
-#> Outputs:
+#> Outputs: 
+#> Dataframe containing draws from the posterior for beta and sigma 
+#> for later analysis.
 #> 
 #> Notes:
 #>
@@ -15,8 +17,7 @@ library(here)
 library(rstan)
 
 # Prepare data -----------------------------------------------------------------
-compare_growth <- readRDS(here('data', 'sim_outputs', 'uc_compare_growth.rds')) |>
-  dplyr::filter(initial_dbh >= 3)
+compare_growth <- readRDS(here('data', 'sim_outputs', 'uc_compare_growth.rds'))
 
 # Run model --------------------------------------------------------------------
 # Initialize Stan Model: translate to C++, compile C++ to DSO, then load.
@@ -36,5 +37,4 @@ fit <- sampling(mod, data = stan_data, chains = 4, iter = 2000)
 fit_params <- as.data.frame(extract(fit, pars = c('beta', 'sigma')))
 fit_summary <- summary(fit, pars = c('beta', 'sigma'))$summary
 
-saveRDS(list(draws = fit_params, summary = fit_summary), 
-        'model_outputs/first_level_fit.RDS')
+saveRDS(fit_params, 'model_outputs/first_level_fit.RDS')

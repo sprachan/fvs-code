@@ -18,7 +18,7 @@ functions{
         // [0, 0.05] 
       if (y[i] == 0) 
         // recorded DG = 0 means actual could be anywhere from 0-0.05.
-        llk[i] = lognormal_lpdf(0.05|location[i], scale[i]); 
+        llk[i] = lognormal_lcdf(0.05|location[i], scale[i]); 
       else
         llk[i] = lognormal_lpdf(y[i]|location[i], scale[i]);
     }
