@@ -35,7 +35,7 @@ t0_stands <- standInit |>
   # year of first remeasurement
   dplyr::mutate(REM_YEAR = ifelse(N_REM == 1, max(INV_YEAR), INV_YEAR[2])) |>
   dplyr::ungroup() |>
-  dplyr::filter(REM_CD == 0) |>
+  # dplyr::filter(REM_CD == 0) |>
   as.data.frame()
 
 # only want trees associated with selected stands
@@ -61,40 +61,39 @@ dir.create(out_dir)
 
 future::plan('multisession', workers = 5)
 
+# project forward from the first measurement
+t0_stands1 <- dplyr::filter(t0_stands, 
+                            # need at least 1 remeasurement for comparison
+                            N_REM >= 1,
+                            REM_CD == 0)
 
-sim <- run_FVS_parallel(t0_stands, t0_trees, n_batches = 4, simple_output = TRUE, 
+# Run simulation for installation --> first remeasurement ----------------------
+
+sim1 <- run_FVS_parallel(t0_stands1, t0_trees, n_batches = 4, simple_output = TRUE, 
                         out_dir = out_dir, fvs_bin = fvs_bin, 
                         year_col = 'REM_YEAR',
                         proj_len = num_years, triple = triple,
                         calibrate = calibrate, add_regen = regen,
                         STDIDENT = STDIDENT, random_seed = random_seed)
 
-saveRDS(sim$tree_list, file = here('data', 'sim_outputs', 'uc_trees_MTID.rds'))
-saveRDS(sim$summary, file = here('data', 'sim_outputs', 'uc_summary_MTID.rds'))
+tl_fvs1 <- sim1$tree_list |>
+  group_by(PID) |>
+  mutate(REM_CD = case_when(year == min(year) ~ 0, year == max(year) ~ 1, 
+                            .default = NA)) |>
+  rename(DIAMETER = dbh,
+         YEAR = year)
 
-# dataframe with diameter growth from this projection vs remeasurements
-tl_fvs <- sim$tree_list |>
-  dplyr::group_by(PID) |>
-  dplyr::mutate(REM_CD = dplyr::case_when(year == min(year) ~ 0,
-                                          year == max(year) ~ 1,
-                                          .default = NA)) |>
-  dplyr::arrange(year) |>
-  dplyr::ungroup()
+tl_fia1 <- treeInit |>
+  dplyr::filter(TUID %in% tl_fvs1$TUID, REM_CD < 2) |>
+  rename(YEAR = INV_YEAR)
 
-tl_fia <- treeInit |>
-  dplyr::filter(TUID %in% tl_fvs$TUID)
-
-# for name matching
-tl_fvs$DIAMETER <- tl_fvs$dbh
-tl_fvs$YEAR <- tl_fvs$year
-tl_fia$YEAR <- tl_fia$INV_YEAR
-
-compare_growth <- dplyr::full_join(tl_fvs[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
-                                   tl_fia[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID', 'HISTORY', 'DAMAGE1', 'SPECIES')], 
-                                   by = c('TUID', 'REM_CD', 'PID', 'YEAR'),
-                                   suffix = c('_FVS', '_FIA')) |>
-  dplyr::filter(REM_CD %in% c(0, 1)) |>
-  dplyr::group_by(TUID, PID, SPECIES) |>
+compare_growth1 <- full_join(tl_fvs1[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
+                             tl_fia1[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID', 'HISTORY', 'DAMAGE1', 'SPECIES')], 
+                             by = c('TUID', 'REM_CD', 'PID', 'YEAR'),
+                             suffix = c('_FVS', '_FIA')) |>
+  # only want trees that have both FIA and FVS (re)measurements/projections, respectively
+  dplyr::filter(!is.na(DIAMETER_FVS), !is.na(DIAMETER_FIA)) |>
+  group_by(TUID, PID) |>
   dplyr::summarize(growth_pd = YEAR[2]-YEAR[1],
                    status_1 = HISTORY[1],
                    status_2 = HISTORY[2],
@@ -103,5 +102,66 @@ compare_growth <- dplyr::full_join(tl_fvs[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD'
                    initial_dbh = DIAMETER_FIA[1]) |>
   filter(dg_FIA >= 0) |>
   dplyr::ungroup()
+
+# for plots remeasured twice, want to project forward from first REmeasurement
+t0_stands2 <- dplyr::filter(t0_stands, N_REM == 2, REM_CD >= 1) |>
+  group_by(PID) |>
+  mutate(REM_YEAR = max(INV_YEAR)) |>
+  # REM_CD == 1 means we are taking stands at their first (not second) REmeasurement
+  dplyr::filter(REM_CD == 1)
+
+# Run simulation for first remeasurement --> second remeasurement --------------
+  
+sim2 <- vector(mode = 'list', length = 17)
+  
+for(s in seq_along(t0_stands2$PID)){
+  sim2[[s]] <- run_FVS(t0_trees, t0_stands2[s,], out_dir = out_dir,
+                       fvs_bin = fvs_bin, CYCLEAT = t0_stands2$REM_YEAR[s],
+                       proj_len = num_years, triple = triple,
+                       calibrate = calibrate, add_regen = regen,
+                       STDIDENT = STDIDENT, random_seed = random_seed)
+}  
+
+tl_fvs2 <- lapply(sim2, `[[`, 'tree_list') |>
+  bind_rows() |>
+  group_by(PID) |>
+  mutate(REM_CD = case_when(year == min(year) ~ 1, year == max(year) ~ 2,
+                            .default = NA)) |>
+  rename(DIAMETER = dbh,
+         YEAR = year)
+
+
+tl_fia2 <- treeInit |>
+  dplyr::filter(TUID %in% tl_fvs2$TUID, REM_CD > 0) |>
+  rename(YEAR = INV_YEAR)
+
+compare_growth2 <- full_join(tl_fvs2[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
+                             tl_fia2[c('DIAMETER', 'YEAR', 'TUID', 'PID', 'HISTORY', 'DAMAGE1', 'SPECIES')], 
+                             by = c('TUID', 'PID', 'YEAR'),
+                             suffix = c('_FVS', '_FIA')) |>
+  # only want trees that have both FIA and FVS (re)measurements/projections, respectively
+  dplyr::filter(!is.na(DIAMETER_FVS), !is.na(DIAMETER_FIA)) |>
+  group_by(TUID, PID) |>
+  dplyr::summarize(growth_pd = YEAR[2]-YEAR[1],
+                   status_1 = HISTORY[1],
+                   status_2 = HISTORY[2],
+                   dg_FVS = DIAMETER_FVS[2]-DIAMETER_FVS[1],
+                   dg_FIA = round(DIAMETER_FIA[2]-DIAMETER_FIA[1], 2),
+                   initial_dbh = DIAMETER_FIA[1]) |>
+  filter(dg_FIA >= 0) |>
+  dplyr::ungroup()
+
+# Save outputs -----------------------------------------------------------------
+tree_list <- bind_rows(sim1$tree_list, 
+                       bind_rows(lapply(sim2, `[[`, 'tree_list')),
+                       .id = 'interval')
+saveRDS(tree_list, file = here('data', 'sim_outputs', 'uc_tree_list.rds'))
+
+summaries <- bind_rows(sim1$summary,
+                       bind_rows(lapply(sim2, `[[`, 'summary')),
+                       .id = 'interval')
+saveRDS(tree_list, file = here('data', 'sim_outputs', 'uc_summary.rds'))
+
+compare_growth <- bind_rows(compare_growth1, compare_growth2, .id = 'interval')
 
 saveRDS(compare_growth, file = here('data', 'sim_outputs', 'uc_compare_growth.rds'))
