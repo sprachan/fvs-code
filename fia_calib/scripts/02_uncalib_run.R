@@ -93,7 +93,7 @@ compare_growth1 <- full_join(tl_fvs1[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PI
                              suffix = c('_FVS', '_FIA')) |>
   # only want trees that have both FIA and FVS (re)measurements/projections, respectively
   dplyr::filter(!is.na(DIAMETER_FVS), !is.na(DIAMETER_FIA)) |>
-  group_by(TUID, PID) |>
+  group_by(TUID, PID, SPECIES) |>
   dplyr::summarize(growth_pd = YEAR[2]-YEAR[1],
                    status_1 = HISTORY[1],
                    status_2 = HISTORY[2],
@@ -141,7 +141,7 @@ compare_growth2 <- full_join(tl_fvs2[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PI
                              suffix = c('_FVS', '_FIA')) |>
   # only want trees that have both FIA and FVS (re)measurements/projections, respectively
   dplyr::filter(!is.na(DIAMETER_FVS), !is.na(DIAMETER_FIA)) |>
-  group_by(TUID, PID) |>
+  group_by(TUID, PID, SPECIES) |>
   dplyr::summarize(growth_pd = YEAR[2]-YEAR[1],
                    status_1 = HISTORY[1],
                    status_2 = HISTORY[2],
