@@ -21,20 +21,28 @@ compare_growth <- readRDS(here('data', 'sim_outputs', 'uc_compare_growth.rds'))
 
 # Run model --------------------------------------------------------------------
 # Initialize Stan Model: translate to C++, compile C++ to DSO, then load.
-mod <- stan_model(file = here('scripts', '03_first_level_model.stan'))
+mod <- stan_model(file = here('scripts', '03_lvl1.stan'))
 
 # stan expects data object to be named list with N (sample size), dg_fvs (vector),
 #> and dg_fia (vector)
-stan_data <- list(N = nrow(compare_growth),
-                  dg_fvs = compare_growth$dg_FVS,
-                  dg_fia = compare_growth$dg_FIA)
+mod_data <- list(N = nrow(compare_growth),
+                  G_r = compare_growth$dg_FIA/compare_growth$dg_FVS)
 
 # sample using HMC to approximate posterior
-fit <- sampling(mod, data = stan_data, chains = 4, iter = 2000)
+fit <- sampling(mod, data = mod_data, chains = 4, iter = 2000)
 
-# Get outputs ------------------------------------------------------------------
+# Examine outputs --------------------------------------------------------------
+traceplot(fit, pars = c('mu', 'sigma')) # looks good!
+Rhat(as.matrix(fit, pars = 'mu')) # 1.001985
+Rhat(as.matrix(fit, pars = 'sigma')) # 1.0027
+# Save draws -------------------------------------------------------------------
 # only care about beta and sigma
-fit_params <- as.data.frame(extract(fit, pars = c('beta', 'sigma')))
-fit_summary <- summary(fit, pars = c('beta', 'sigma'))$summary
+fit_params <- as.data.frame(extract(fit, pars = c('mu', 'sigma')))
 
-saveRDS(fit_params, 'model_outputs/first_level_fit.RDS')
+fit_diagnostics <- data.frame(param = c('mu', 'sigma')) |>
+  dplyr::mutate(Rhat = Rhat(as.matrix(fit, pars = param)),
+                bulk_ESS = ess_bulk(as.matrix(fit, pars = param)),
+                tail_ESS = ess_tail(as.matrix(fit, pars = param)))
+
+saveRDS(list(draws = fit_params, diagnostics = fit_diagnostics), 
+        'model_outputs/lvl1_fit.RDS')
