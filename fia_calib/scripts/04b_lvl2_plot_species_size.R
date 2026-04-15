@@ -33,12 +33,12 @@ mod_data <- list(N = nrow(compare_growth),
                   larch = compare_growth$larch)
 
 # sample using HMC to approximate posterior
-fit <- sampling(mod, data = stan_data, chains = 4, iter = 3000)
+fit <- sampling(mod, data = mod_data, chains = 4, iter = 3000)
 
 check_hmc_diagnostics(fit) # no divergent transitions or max tree depth
 
 # Examine outputs --------------------------------------------------------------
-# all of these mixed
+# all of these mixed well
 traceplot(fit, pars = c('beta_size', 'sigma', 'beta_larch'))
 
 # and a random sample of plots, just for traceplot
@@ -47,36 +47,32 @@ samp <- sample(unique(compare_growth$stan_plot_id),
 
 traceplot(fit, pars = paste0('alpha_plot[', samp, ']'))
 alpha_plot_rhats <- summary(fit, pars = 'alpha_plot', use_cache = FALSE)$summary[,'Rhat']
+alpha_plot_rhats <- sort(alpha_plot_rhats, decreasing = TRUE)
+hist(alpha_plot_rhats)
 
-idx <- which(alpha_plot_rhats>1.0025)
-max(alpha_plot_rhats) # 1.017, not horrible
-
-for(i in idx){
-  ap <- data.frame(est = unname(as.matrix(fit, pars = paste0('alpha_plot[', i, ']'))),
+for(i in 1:10){
+  ap <- data.frame(est = unname(as.matrix(fit, pars = names(alpha_plot_rhats)[i])),
               # chain
               chain = rep(seq(1, 4, by = 1), each = 1500))
   p <- ggplot(ap)+
     geom_histogram(aes(x = est, fill = factor(chain)), col = 'black',
-                   bins = 20)
+                   bins = 20)+
+    labs(title = names(alpha_plot_rhats)[i])
   print(p)
 }
 
-# alpha plot 19 is bimodal, which is not great.
-#> alpha plot 884 just has a long tail
+# alpha plot 19 looks bimodal, but right mode is quite small compared to left.
 
 View(compare_growth[compare_growth$stan_plot_id == 19,]) # plot 19 only has 2 trees!
+#> shrinkage isn't enough for this particular plot...?
+#> very small n_eff, too (22).
 
-traceplot(fit, pars = paste0('alpha_plot[', idx, ']'))
-ess_bulk(as.matrix(fit, pars = 'alpha_plot')) # 1198 > 400, OK
+traceplot(fit, pars = 'alpha_plot[19]')
 
 # Save draws -------------------------------------------------------------------
-fit_params <- rstan::extract(fit, pars = c('beta_size', 'sigma', 'beta_species',
+fit_params <- as.data.frame(fit, pars = c('beta_size', 'sigma', 'beta_larch',
                                     'alpha_plot'))
-fit_diagnostics <- data.frame(param = c('beta_size', 'sigma', 'beta_species', 
-                                        'alpha_plot')) |>
-  dplyr::mutate(Rhat = Rhat(as.matrix(fit, pars = param)),
-                bulk_ESS = ess_bulk(as.matrix(fit, pars = param)),
-                tail_ESS = ess_tail(as.matrix(fit, pars = param)))
-
+fit_diagnostics <- summary(fit, pars = c('beta_size', 'sigma', 'beta_larch', 'alpha_plot'))$summary
+min(fit_diagnostics[,'n_eff']) # 430 > 100, OK
 saveRDS(list(draws = fit_params, diagnostics = fit_diagnostics), 
         'model_outputs/lvl2_plot_species_size_fit.RDS')

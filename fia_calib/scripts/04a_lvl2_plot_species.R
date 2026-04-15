@@ -12,7 +12,7 @@
 
 library(here)
 library(rstan)
-
+library(ggplot2)
 # Prepare data -----------------------------------------------------------------
 compare_growth <- readRDS(here('data', 'sim_outputs', 'uc_compare_growth.rds'))
 compare_growth$stan_plot_id <- as.numeric(factor(compare_growth$PID))
@@ -73,29 +73,41 @@ check_hmc_diagnostics(fit) # no divergent transitions or max tree depth
 traceplot(fit, pars = c('sigma', 'beta_larch')) # good mixing
 
 beta_species <- as.matrix(fit, pars = 'beta_larch')
-Rhat(beta_species) # 0.9998868
+Rhat(beta_species) # 1.0002
 
 # what about size and sigma?=
-Rhat(as.matrix(fit, pars = 'sigma')) # 0.99988, looks good
-ess_bulk(as.matrix(fit, pars = 'beta_larch')) # 2320 > 400, OK
-ess_bulk(as.matrix(fit, pars = 'sigma')) # 2578 > 400, looks good
+Rhat(as.matrix(fit, pars = 'sigma')) # < 1.0001, looks good
+ess_bulk(as.matrix(fit, pars = 'beta_larch')) # 2716 > 400, OK
+ess_bulk(as.matrix(fit, pars = 'sigma')) # 3228 > 400, looks good
 
 # and a random sample of plots, just for traceplot
 samp <- sample(unique(compare_growth$stan_plot_id),
                12, replace = FALSE)
 
 traceplot(fit, pars = paste0('alpha_plot[', samp, ']')) # looks good
-Rhat(as.matrix(fit, pars = 'alpha_plot')) # 1.989 -- high
-idx <- which.max(summary(fit, pars = 'alpha_plot', use_cache = FALSE)$summary[,'Rhat'])
-hist(as.matrix(fit, pars = 'alpha_plot')[,idx])
-ess_bulk(as.matrix(fit, pars = 'alpha_plot')) # 1198 > 400, OK
+
+alpha_plot_rhats <- summary(fit, pars = 'alpha_plot', use_cache = FALSE)$summary[,'Rhat']
+hist(alpha_plot_rhats)
+alpha_plot_rhats <- sort(alpha_plot_rhats, decreasing = TRUE)
+
+# 10 plots with largest R hats, AKA worst mixing
+for(i in 1:10){
+  ap <- data.frame(est = unname(as.matrix(fit, pars = names(alpha_plot_rhats)[i])),
+                   # chain
+                   chain = rep(seq(1, 4, by = 1), each = 1500))
+  p <- ggplot(ap)+
+    geom_histogram(aes(x = est, fill = factor(chain)), col = 'black',
+                   bins = 20)+
+    labs(title = names(alpha_plot_rhats)[i])
+  print(p)
+}
+
+# all generally look OK, unimodal
+
 
 # Save draws -------------------------------------------------------------------
 fit_params <- extract(fit, pars = c('beta_larch', 'sigma', 'alpha_plot'))
-fit_diagnostics <- data.frame(param = c('beta_larch', 'sigma', 'alpha_plot')) |>
-  dplyr::mutate(Rhat = Rhat(as.matrix(fit, pars = param)),
-                bulk_ESS = ess_bulk(as.matrix(fit, pars = param)),
-                tail_ESS = ess_tail(as.matrix(fit, pars = param)))
+fit_diagnostics <- summary(fit, probs = c(0.025, 0.1, 0.5, 0.9, 0.975))$summary
 
 saveRDS(list(draws = fit_params, diagnostics = fit_diagnostics), 
         'model_outputs/lvl2_plot_species_fit.RDS')
