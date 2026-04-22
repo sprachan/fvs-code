@@ -32,11 +32,14 @@ data {
 parameters {
   real beta_larch;
   real beta_size;
-  vector[N_plots] alpha_plot;
+  real plot_mean;
+  vector[N_plots] alpha_plot_std;
   real<lower=0> sigma;
+  real<lower=0> sigma_plot;
 }
 
 transformed parameters{
+  vector[N_plots] alpha_plot = plot_mean+sigma_plot*alpha_plot_std;
   vector[N] mu; 
   mu = exp(alpha_plot[plot_id]+larch.*beta_larch+initial_dbh.*beta_size);
   vector[N] shape = square(mu)./square(sigma);
@@ -47,8 +50,12 @@ model {
   // priors
   sigma ~ normal(0, 1); // draw one value total
   beta_larch ~ normal(0, 0.5);
-  alpha_plot ~ normal(0, 0.5); // draw one value PER PLOT.exp(0.5) = 1.65
   beta_size ~ normal(0, 0.75); // exp(0.75) = 2.1
+  
+  // plot-level priors
+  plot_mean ~ normal(0, 0.5);
+  sigma_plot ~ normal(0, 1);
+  alpha_plot_std ~ std_normal();
 
   // data model
   G_r ~ gamma_zeroes(shape, rate);
