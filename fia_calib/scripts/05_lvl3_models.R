@@ -45,19 +45,21 @@ stand_data <- right_join(deficit, stand_density, by = 'PID') |>
 compare_growth_full <- compare_growth |>
   filter(PID %in% stand_data$PID) |> # not all stands have deficit data...
   left_join(stand_data[c('PID', 'stan_plot_id')])
+
+compare_growth_full$larch <- ifelse(compare_growth_full$SPECIES == 73, 1, 0)
+
 # Prep data for stan -----------------------------------------------------------
 mod_data <- list(N = nrow(compare_growth_full),
                  N_plots = length(unique(compare_growth_full$stan_plot_id)),
                  G_r = compare_growth_full$dg_FIA/compare_growth_full$dg_FVS,
-                 initial_dbh = compare_growth_full$initial_dbh,
-                 larch = ifelse(compare_growth_full$SPECIES == 73, 1, 0),
+                 larch = compare_growth_full$larch,
                  plot_id = compare_growth_full$stan_plot_id,
                  evap = stand_data$rescaled_def,
                  density = stand_data$rescaled_TPH)
 
 # Compile and fit model --------------------------------------------------------
 # Initialize Stan Model: translate to C++, compile C++ to DSO, then load.
-mod <- stan_model(file = here('scripts', '05_lvl3.stan'))
+mod <- stan_model(file = here('scripts', '05_lvl3_evap_density_species.stan'))
 
 # sample using HMC to approximate posterior
 #> ran with no warnings!
@@ -66,39 +68,35 @@ fit <- sampling(mod, data = mod_data, chains = 4, iter = 3000)
 # Examine fit ----------------------------------------------------------
 check_hmc_diagnostics(fit) # no issues
 
-# good mixing on everything!!!
-traceplot(fit, pars = c('beta_size', 'beta_larch', 'sigma', 'sigma_plot',
+# good mixing, though some jumping around in the intercept
+traceplot(fit, pars = c('sigma', 'sigma_plot',
+                        'beta_larch',
                         'beta_evap', 'beta_density', 'beta_0'))
 
-# hopefully adding coefficients and plot error as I did helped convergence
-#> relative to previous models
 samp <- sample(unique(compare_growth_full$stan_plot_id),
                12, replace = FALSE)
 traceplot(fit, pars = paste0('alpha_plot[', samp, ']'))
 
-alpha_plot_rhats <- summary(fit, pars = 'alpha_plot', use_cache = FALSE)$summary[,'Rhat']
-alpha_plot_rhats <- sort(alpha_plot_rhats, decreasing = TRUE)
-hist(alpha_plot_rhats)
+alpha_plot_rhats <- summary(fit, pars = 'alpha_plot')$summary[,'Rhat']
+hist(alpha_plot_rhats) # all < 1.01
 
-fit_params <- as.data.frame(fit, pars = c('beta_size', 
-                                          'beta_larch',
-                                          'sigma', 
-                                          'alpha_plot',
+fit_params <- as.data.frame(fit, pars = c('sigma', 
                                           'sigma_plot',
                                           'beta_evap',
                                           'beta_density',
-                                          'beta_0'))
-fit_diagnostics <- summary(fit, pars = c('beta_size', 
-                                         'beta_larch',
-                                         'sigma', 
-                                         'alpha_plot',
+                                          'beta_0',
+                                          'beta_larch',
+                                          'alpha_plot'))
+fit_diagnostics <- summary(fit, pars = c('sigma', 
                                          'sigma_plot',
                                          'beta_evap',
                                          'beta_density',
-                                         'beta_0'))$summary
+                                         'beta_0',
+                                         'beta_larch',
+                                         'alpha_plot'))$summary
 
-min(fit_diagnostics[,'n_eff'])
-max(fit_diagnostics[,'Rhat'])
+min(fit_diagnostics[,'n_eff']) # 890...this is a bit low.
+max(fit_diagnostics[,'Rhat']) # 1.003
 saveRDS(list(draws = fit_params, diagnostics = fit_diagnostics), 
-        'model_outputs/lvl3_fit.RDS')
+        'model_outputs/lvl3_evap_density_species_fit.RDS')
 
