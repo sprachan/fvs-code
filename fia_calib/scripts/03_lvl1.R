@@ -37,7 +37,7 @@ Rhat(as.matrix(fit, pars = 'mu')) # 1.0013
 Rhat(as.matrix(fit, pars = 'sigma')) # 1.0026
 # Save draws -------------------------------------------------------------------
 # only care about beta and sigma
-fit_params <- as.data.frame(extract(fit, pars = c('mu', 'sigma')))
+fit_params <- as.data.frame(fit, pars = c('mu', 'sigma'))
 
 fit_diagnostics <- data.frame(param = c('mu', 'sigma')) |>
   dplyr::group_by(param) |>
