@@ -69,7 +69,7 @@ fit <- sampling(mod, data = mod_data, chains = 4, iter = 3000)
 check_hmc_diagnostics(fit) # no issues
 
 # good mixing, though some jumping around in the intercept
-traceplot(fit, pars = c('sigma', 'sigma_plot',
+traceplot(fit, pars = c('rate', 'sigma_plot',
                         'beta_larch',
                         'beta_evap', 'beta_density', 'beta_0'))
 
@@ -80,14 +80,14 @@ traceplot(fit, pars = paste0('alpha_plot[', samp, ']'))
 alpha_plot_rhats <- summary(fit, pars = 'alpha_plot')$summary[,'Rhat']
 hist(alpha_plot_rhats) # all < 1.01
 
-fit_params <- as.data.frame(fit, pars = c('sigma', 
+fit_params <- as.data.frame(fit, pars = c('rate', 
                                           'sigma_plot',
                                           'beta_evap',
                                           'beta_density',
                                           'beta_0',
                                           'beta_larch',
                                           'alpha_plot'))
-fit_diagnostics <- summary(fit, pars = c('sigma', 
+fit_diagnostics <- summary(fit, pars = c('rate', 
                                          'sigma_plot',
                                          'beta_evap',
                                          'beta_density',

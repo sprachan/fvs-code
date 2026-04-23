@@ -29,21 +29,18 @@ mod_data <- list(N = nrow(compare_growth),
                   G_r = compare_growth$dg_FIA/compare_growth$dg_FVS)
 
 # sample using HMC to approximate posterior
-fit <- sampling(mod, data = mod_data, chains = 4, iter = 2000)
+fit <- sampling(mod, data = mod_data, chains = 4, iter = 3000)
 
 # Examine outputs --------------------------------------------------------------
-traceplot(fit, pars = c('mu', 'sigma')) # looks good!
-Rhat(as.matrix(fit, pars = 'mu')) # 1.0013
-Rhat(as.matrix(fit, pars = 'sigma')) # 1.0026
+traceplot(fit, pars = c('mu', 'rate')) # looks good!
+Rhat(as.matrix(fit, pars = 'mu')) # < 1.01
+Rhat(as.matrix(fit, pars = 'rate')) # < 1.01
+bayesplot::mcmc_pairs(fit, pars = c('mu', 'rate', 'shape'))
 # Save draws -------------------------------------------------------------------
 # only care about beta and sigma
-fit_params <- as.data.frame(fit, pars = c('mu', 'sigma'))
+fit_params <- as.data.frame(fit, pars = c('mu', 'rate', 'shape'))
 
-fit_diagnostics <- data.frame(param = c('mu', 'sigma')) |>
-  dplyr::group_by(param) |>
-  dplyr::mutate(Rhat = Rhat(as.matrix(fit, pars = param)),
-                bulk_ESS = ess_bulk(as.matrix(fit, pars = param)),
-                tail_ESS = ess_tail(as.matrix(fit, pars = param)))
+fit_diagnostics <- as.data.frame(summary(fit, pars = c('mu', 'rate', 'shape'))$summary)
 
 saveRDS(list(draws = fit_params, diagnostics = fit_diagnostics), 
         'model_outputs/lvl1_fit.RDS')

@@ -29,18 +29,17 @@ data {
 
 parameters {
   real mu;
-  real<lower=0> sigma;
+  real<lower=0> rate;
 }
 
 transformed parameters{
-  real shape = square(mu)/square(sigma);
-  real rate = mu/square(sigma);
+  real shape = mu*rate;
 }
 
 model {
   // priors
   mu ~ gamma(1, 2);
-  sigma ~ normal(0, 1);
+  rate ~ cauchy(0, 1);
   
   // data model
   G_r ~ gamma_zeroes(shape, rate);

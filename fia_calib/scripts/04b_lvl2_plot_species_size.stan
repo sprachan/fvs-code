@@ -6,14 +6,14 @@
 // method from https://mc-stan.org/docs/stan-users-guide/truncation-censoring.html#censored.section
 
 functions{
-  real gamma_zeroes_lpdf(vector y, vector shape, vector rate){
+  real gamma_zeroes_lpdf(vector y, vector shape, real rate){
     vector [num_elements(y)] llk;
     for(i in 1:num_elements(y)){
       if (y[i] == 0) 
         // recorded DG = 0 means actual could be anywhere from 0-0.05.
-        llk[i] = gamma_lcdf(0.05|shape[i], rate[i]); 
+        llk[i] = gamma_lcdf(0.05|shape[i], rate); 
       else
-        llk[i] = gamma_lpdf(y[i]|shape[i], rate[i]);
+        llk[i] = gamma_lpdf(y[i]|shape[i], rate);
     }
     return sum(llk);
 }
@@ -34,7 +34,7 @@ parameters {
   real beta_size;
   real plot_mean;
   vector[N_plots] alpha_plot_std;
-  real<lower=0> sigma;
+  real<lower=0> rate;
   real<lower=0> sigma_plot;
 }
 
@@ -42,13 +42,13 @@ transformed parameters{
   vector[N_plots] alpha_plot = plot_mean+sigma_plot*alpha_plot_std;
   vector[N] mu; 
   mu = exp(alpha_plot[plot_id]+larch.*beta_larch+initial_dbh.*beta_size);
-  vector[N] shape = square(mu)./square(sigma);
-  vector[N] rate = mu./square(sigma);
+  
+  vector[N] shape = mu*rate;
 }
 
 model {
   // priors
-  sigma ~ normal(0, 1); // draw one value total
+  rate ~ cauchy(0, 1); // draw one value total
   beta_larch ~ normal(0, 0.5);
   beta_size ~ normal(0, 0.75); // exp(0.75) = 2.1
   
