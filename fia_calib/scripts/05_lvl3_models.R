@@ -27,14 +27,11 @@ stand_density <- readRDS(here('data', 'fvs_ready', 'FVS_TreeInit_MTID.rds')) |>
   inner_join(stands[c('STAND_CN')], 
              by = 'STAND_CN')|>
   filter(DIAMETER > 0.1, REM_CD == 0) |>
-  mutate(plot_area_m2 = ifelse(DIAMETER > 5, pi*7.3152^2, pi*2.07624),
-         plot_area_ha = plot_area_m2/10000,
-         expansion_factor = 1/(plot_area_ha*4)) |>
-  summarize(count = n(), .by = c('PID', 'expansion_factor')) |>
-  mutate(TPH = count*expansion_factor) |>
-  summarize(TPH = sum(TPH), .by = 'PID') |>
-  # rescale to 1000 trees per hectare
-  mutate(rescaled_TPH = (TPH-median(TPH))/1000)
+  # BA in ft^2
+  mutate(BA = (pi*(DIAMETER/2)^2)/144) |>
+  summarize(STAND_BA = sum(BA), .by = PID) |>
+  mutate(centered_STAND_BA = STAND_BA-mean(STAND_BA))
+
 
 stand_data <- right_join(deficit, stand_density, by = 'PID') |>
   filter(!is.na(rescaled_def), !is.nan(rescaled_def)) |>
@@ -55,7 +52,7 @@ mod_data <- list(N = nrow(compare_growth_full),
                  larch = compare_growth_full$larch,
                  plot_id = compare_growth_full$stan_plot_id,
                  evap = stand_data$rescaled_def,
-                 density = stand_data$rescaled_TPH)
+                 density = stand_data$centered_STAND_BA)
 
 # Compile and fit model --------------------------------------------------------
 # Initialize Stan Model: translate to C++, compile C++ to DSO, then load.
