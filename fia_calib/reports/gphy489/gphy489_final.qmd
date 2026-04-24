@@ -1,0 +1,283 @@
+---
+title: "GPHY489 Final Project"
+author: "Sejal Prachand"
+format: 
+  html:
+    embed-resources: true
+    toc: true
+    toc-float: true
+---
+
+## Objectives
+
+
+## Dependencies and file locations
+
+By nature, project relies heavily on the Forest Vegetation Simulator (FVS; [more information here](https://www.fs.usda.gov/managing-land/forest-management/fvs/software)). Unfortunately, this software is currently only available for Windows. It is (or was) possible to build FVS on Linux, but the Forest Service has removed build instructions for non-Windows systems as of April 2026. 
+
+To make this project portable across systems, I have therefore included the code to re-run FVS, but it is evaluated only if the OS is Windows AND the user has FVS installed on their machine. Otherwise, FVS simulation results are read from .RDS files bundled with this project. These .RDS files were created with the code included in this document.
+
+Similarly, I'm developing an R package that provides a more user-friendly interface for running FVS from R. This package, of course, requires an FVS installation for full functionality. Nonetheless, the package will load without warnings on non-Windows systems, and I use some system-agnostic functions in this code. Windows-only code is demarcated with the comment `##### Windows only ######` at the beginning of the code chunk.
+
+The below (folded) chunk checks system OS. If the OS is Windows, it checks for an FVS installation in the home (`C:`) directory and messages with results. If needed, the search directory can be modified by hand (unfortunately, `utils::menu` does not work in Quarto/Rmd because code is run non-interactively). If FVS and our specific variant (FVS-IE) are found in the system, FVS code will be run. Otherwise, simulation results will be loaded from `.RDS` files.
+
+```{r}
+#| label: check-FVS
+#| code-fold: true
+
+sys_os <- tolower(Sys.info()['sysname'])
+
+if(sys_os == 'windows'){
+  ## MODIFY IF FVS IS NOT AT THIS LEVEL ##
+  root <- 'C:'
+  ########################################
+  fvs_dir <- file.path(root, 'FVS', 'FVSSoftware')
+  
+  message('Looking for FVS/FVSSoftware in ', root, ' modify if necessary.')
+  if(dir.exists(fvs_dir)){
+    message('FVS found at ', fvs_dir, ' checking for FVSIE install...')
+    if(dir.exists(file.path(fvs_dir, 'FVSbin', 'FVSie.dll'))){
+      message('FVSIE found at ', file.path(fvs_dir, 'FVSbin', 'FVSie.dll'), 
+              ' FVS will be run.')
+    }else{
+      message('FVSIE not found at ', file.path(fvs_dir, 'FVSbin', 'FVSie.dll'), 
+              ' FVS will not be run.')
+    }
+  }else{
+    message('FVS/FVSSoftware not found in ', root, '. FVS results will be loaded from .RDS files and FVS will not be run.')
+  }
+}else{
+  message('Detected System OS is not Windows. FVS will not be run and simulation results will be loaded from .RDS files')
+}
+```
+
+Now, we can load dependencies. I assume that these packages, `DBI`, and `RSQLite` are all installed on the users machine (they will be installed along with `rFVSIEtools` as dependencies for that package). Otherwise, run `install.packages()` to install any necessary packages.
+
+```{r}
+#| label: load-deps
+#| collapse: true
+
+library(here) # find files, helpful for quarto documents
+library(dplyr) # data wrangling
+library(ggplot2) # pretty plots
+library(terra) # work with spatial data
+library(sf)
+library(rnaturalearth) # state outlines
+
+# if my custom package is not installed, get it from GitHub (it's not on CRAN)
+if(system.file(package = 'rFVSIEtools') == ''){
+    message('Installing development package rFVSIEtools from Github')
+    remotes::install_github(repo = 'sprachan/FVSIE-tools')
+}
+
+library(rFVSIEtools)
+```
+
+Now that we have dependencies loaded, we will establish some file paths that will be used across the code. These are all relative to the project directory.
+
+```{r}
+fia_path <- here('data', 'raw_data')
+fvs_ready <- here('data', 'fvs_ready')
+```
+
+
+
+## Prepare FIA data
+
+Forest Inventory and Analysis state-level databases are freely available from the [FIA Datamart](https://research.fs.usda.gov/products/dataandtools/fia-datamart). The Montana and Idaho databases (downloaded April 2026) are included as .db files in this package for full reproducibility.
+
+First, we read in the FIA data, filtering to only forested plots that were measured after the new, standardized inventory protocol was established in 2001.
+
+```{r}
+# Data directories and files
+fia_path <- here('data', 'raw_data')
+fvs_ready <- list(MT = NULL, ID = NULL)
+states <- c('MT', 'ID')
+
+for(i in seq_along(states)){
+  db_path <- here(fia_path, paste0('SQLite_FIADB_', states[i], '.db'))
+  fvs_ready[[i]] <- fetch_cond(db_loc = db_path, 'COND_STATUS_CD == 1, CONDPROP_UNADJ == 1, INVYR > 2001, DSTRBCD1 == 0, TRTCD1 == 0') |>
+    # use _ placeholder to pipe condition table into get_FIA_state()
+    get_FIA_state(db_path, fia_cond_subset = _, add_identifier = TRUE)
+}
+
+# Unlist fvs_ready stuff into separate stand and tree dataframes
+FVS_standInit <- bind_rows(fvs_ready$MT$FVS_StandInit,
+                           fvs_ready$ID$FVS_StandInit) |>
+  arrange(PID, INV_YEAR) |>
+  group_by(PID) |>
+  mutate(REM_CD = seq(0, n()-1),
+         N_REM = max(REM_CD),
+         FOREST = stringr::str_pad(FOREST, 2, pad = '0', side = 'left')) |>
+  filter(VARIANT == 'IE') |>
+  ungroup()
+
+FVS_treeInit <- bind_rows(fvs_ready$MT$FVS_TreeInit,
+                          fvs_ready$ID$FVS_TreeInit) |>
+  left_join(FVS_standInit[c('PID', 'INV_YEAR', 'REM_CD',  'N_REM')],
+            by = c('PID', 'INV_YEAR')) |>
+  # Only undamaged trees that are Douglas-fir or western larch
+  filter(DAMAGE1 == 0|is.na(DAMAGE1),
+         SPECIES %in% c(202, 73))
+
+rm(fvs_ready) # large list can go away
+```
+
+We only want to run FVS on stands that have been remeasured multiple times. These will be input into FVS and projected forward to the next time they were measured. For example, suppose plot X was first measured in 2003, then remeasured in 2010. Then, FVS will project growth from 2003 to 2010, allowing us to compare FVS-projected growth to FIA remeasured growth over the same time period. For simplicity, we will only project from first measurement to first *re*measurement and avoid the complexities of projecting plots from first to second *re*measurements.
+
+```{r}
+#| label: filter_stands
+t0_stands <- FVS_standInit |>
+  # N_REM is Number of REMeasurements; 
+  #> REMeasurement CoDe is 0 for install, 1 for first remeasure, 2 for second, etc
+  filter(N_REM >= 1, REM_CD == 0) |>
+  dplyr::group_by(PID) |>
+  # year of first remeasurement
+  dplyr::mutate(REM_YEAR = ifelse(N_REM == 1, max(INV_YEAR), INV_YEAR[2])) |>
+  dplyr::ungroup() |>
+  as.data.frame()
+
+# only want trees associated with selected stands
+t0_trees <- FVS_treeInit |>
+  inner_join(t0_stands['STAND_CN'], by = 'STAND_CN') |>
+  filter(HISTORY == 1, # alive at first remeasurement only
+         # large trees only
+         DIAMETER >= 3) 
+```
+
+### Convert FIA locations to spatial data format
+
+Now that we have FIA data in hand, we need to convert stand locations into a spatial dataframe. 
+
+The documentation for FIA data indicated that the coordinates were collected in the NAD83 datum, so we will make these data into a simple features dataframe with that datum:
+
+```{r}
+stand_locs <- t0_stands |>
+  select(LATITUDE, LONGITUDE, PID, OWNCD, INV_YEAR, N_REM, REM_CD) |>
+  st_as_sf(coords = c('LONGITUDE', 'LATITUDE'),
+           crs = st_crs('epsg:4269')) 
+```
+
+Because FIA plot locations are fuzzed for privacy, we want get climatic water deficits from buffers (polygons, not points) that contain all possible actual plot locations. Public plots are fuzzed less than private plots, so we need to account for that in our buffer creation. I'm not sure how to get `sf` objects to play nice with `SpatRaster` objects, so I'll convert stand locations to `SpatVector ` objects and use those to make buffers.
+
+```{r}
+# buffer each plot locations 0.5mi (if on public land) or 1mi (if on private land) 
+pub_radius <- 0.5*1609.344 # convert mi to m
+priv_radius <- 1609.344
+
+pub_buffer <- stand_locs[stand_locs$OWNCD < 40,] |>
+  vect() |>
+  buffer(width = pub_radius, quadsegs = 16) #quadsegs makes these a little smoother
+priv_buffer <- stand_locs[stand_locs$OWNCD >= 40,] |>
+  vect() |>
+  buffer(width = priv_radius, quadsegs = 16)
+```
+
+Now, we are ready to use these buffers to extract climatic water deficit for each plot location.
+
+## Prepare climatic water deficit data
+
+```{r}
+study_region <- rnaturalearth::ne_states(country = 'united states of america') |>
+  filter(iso_3166_2 %in% c('US-MT', 'US-ID')) |>
+  st_transform(crs = st_crs(stand_locs))
+
+deficit <- rast(here('data', 'raw_data', 
+                     'V_1_5_annual_gridmet_historical_Deficit_1980_2019_annual_means_cropped_units_mm.tif')) |>
+  terra::project(y = crs(stand_locs)) |>
+  crop(ext(study_region))
+```
+
+We'll double check that everything matches up appropriately by, of course, making a map! I'll take advantage of `terra`'s built-in plotting functionality.
+
+```{r}
+plot(deficit)
+lines(vect(study_region), col = 'lightgrey')
+plot(pub_buffer, add = TRUE, col = 'white', border = 'white')
+plot(priv_buffer, add = TRUE, col = 'white', border = 'white')
+```
+
+This looks good, so we can proceed to extracting deficit. I'm not sure how to do this in `sf`, but I do know how to do it in `terra`, so I'll be using those tools.
+
+```{r}
+pub_deficits <- extract(deficit, pub_buffer, fun = mean, touches = TRUE, bind = TRUE) |>
+  as.data.frame()
+priv_deficits <- extract(deficit, priv_buffer, fun = mean, touches = TRUE, bind = TRUE) |>
+  as.data.frame()
+
+stand_deficits <- bind_rows(pub_deficits, priv_deficits)
+colnames(stand_deficits)[length(colnames(stand_deficits))] <- 'deficit'
+```
+
+
+## Run FVS
+
+```{r}
+#| label: run-FVS
+#| code-fold: true
+
+############ Windows only #################
+
+if(sys_os == 'windows'){
+  # Projection parameters
+  num_years <- 11
+  triple <- FALSE
+  calibrate <- FALSE
+  regen <- FALSE
+  STDIDENT <- 'FIA_UNCALIB'
+  random_seed <- 2025
+  
+  # Directory for .key, .tre, and .out files
+  dt <- paste0('fia_uc_', format(Sys.Date(), '%b%d%Y'), '_', 
+               format(Sys.time(), '%H%M'), collapse = '')
+  out_dir <- file.path(fvs_runs, dt)
+  dir.create(out_dir)
+  
+  future::plan('multisession', workers = 5)
+
+  sim <- run_FVS_parallel(stand_info = t0_stands, 
+                          tree_list = t0_trees, 
+                          n_batches = 4, 
+                          simple_output = TRUE, 
+                          out_dir = out_dir, fvs_bin = fvs_bin, 
+                          year_col = 'REM_YEAR',
+                          proj_len = num_years, triple = triple,
+                          calibrate = calibrate, add_regen = regen,
+                          STDIDENT = STDIDENT, random_seed = random_seed)
+  
+  tl_fvs <- sim$tree_list |>
+    group_by(PID) |>
+    mutate(REM_CD = case_when(year == min(year) ~ 0, year == max(year) ~ 1, 
+                              .default = NA)) |>
+    rename(DIAMETER = dbh,
+           YEAR = year)
+  
+  tl_fia <- treeInit |>
+    dplyr::filter(TUID %in% tl_fvs1$TUID, REM_CD < 2) |>
+    rename(YEAR = INV_YEAR)
+  
+  compare_growth <- full_join(tl_fvs1[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
+                              tl_fia1[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID', 'HISTORY', 'DAMAGE1', 'SPECIES')], 
+                              by = c('TUID', 'REM_CD', 'PID', 'YEAR'),
+                              suffix = c('_FVS', '_FIA')) |>
+    # only want trees that have both FIA and FVS (re)measurements/projections, respectively
+    dplyr::filter(!is.na(DIAMETER_FVS), !is.na(DIAMETER_FIA)) |>
+    group_by(TUID, PID, SPECIES) |>
+    dplyr::summarize(growth_pd = YEAR[2]-YEAR[1],
+                     status_1 = HISTORY[1],
+                     status_2 = HISTORY[2],
+                     dg_FVS = DIAMETER_FVS[2]-DIAMETER_FVS[1],
+                     dg_FIA = round(DIAMETER_FIA[2]-DIAMETER_FIA[1], 2),
+                     initial_dbh = DIAMETER_FIA[1]) |>
+    filter(dg_FIA >= 0) |>
+    dplyr::ungroup()
+}else{
+  message('Detected OS not Windows; FVS not run.')
+}
+```
+
+If not on Windows, we will retrieve simulation outputs:
+```{r}
+
+```
+
