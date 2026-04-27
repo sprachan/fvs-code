@@ -87,21 +87,7 @@ tl_fia1 <- treeInit |>
   dplyr::filter(TUID %in% tl_fvs1$TUID, REM_CD < 2) |>
   rename(YEAR = INV_YEAR)
 
-compare_growth1 <- full_join(tl_fvs1[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
-                             tl_fia1[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID', 'HISTORY', 'DAMAGE1', 'SPECIES')], 
-                             by = c('TUID', 'REM_CD', 'PID', 'YEAR'),
-                             suffix = c('_FVS', '_FIA')) |>
-  # only want trees that have both FIA and FVS (re)measurements/projections, respectively
-  dplyr::filter(!is.na(DIAMETER_FVS), !is.na(DIAMETER_FIA)) |>
-  group_by(TUID, PID, SPECIES) |>
-  dplyr::summarize(growth_pd = YEAR[2]-YEAR[1],
-                   status_1 = HISTORY[1],
-                   status_2 = HISTORY[2],
-                   dg_FVS = DIAMETER_FVS[2]-DIAMETER_FVS[1],
-                   dg_FIA = round(DIAMETER_FIA[2]-DIAMETER_FIA[1], 2),
-                   initial_dbh = DIAMETER_FIA[1]) |>
-  filter(dg_FIA >= 0) |>
-  dplyr::ungroup()
+
 
 # for plots remeasured twice, want to project forward from first REmeasurement
 t0_stands2 <- dplyr::filter(t0_stands, N_REM == 2, REM_CD >= 1) |>
@@ -115,7 +101,7 @@ t0_stands2 <- dplyr::filter(t0_stands, N_REM == 2, REM_CD >= 1) |>
 sim2 <- vector(mode = 'list', length = 17)
   
 for(s in seq_along(t0_stands2$PID)){
-  sim2[[s]] <- run_FVS(t0_trees, t0_stands2[s,], out_dir = out_dir,
+  sim2[[s]] <- run_FVS(tree_list = t0_trees, stand_info = t0_stands2[s,], out_dir = out_dir,
                        fvs_bin = fvs_bin, CYCLEAT = t0_stands2$REM_YEAR[s],
                        proj_len = num_years, triple = triple,
                        calibrate = calibrate, add_regen = regen,
@@ -135,23 +121,50 @@ tl_fia2 <- treeInit |>
   dplyr::filter(TUID %in% tl_fvs2$TUID, REM_CD > 0) |>
   rename(YEAR = INV_YEAR)
 
-compare_growth2 <- full_join(tl_fvs2[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
-                             tl_fia2[c('DIAMETER', 'YEAR', 'TUID', 'PID', 'HISTORY', 'DAMAGE1', 'SPECIES')], 
-                             by = c('TUID', 'PID', 'YEAR'),
+
+# Save outputs -----------------------------------------------------------------
+compare_growth1 <- full_join(tl_fvs1[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
+                             tl_fia1[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID', 'HISTORY', 'DAMAGE1', 'SPECIES')], 
+                             by = c('TUID', 'REM_CD', 'PID', 'YEAR'),
                              suffix = c('_FVS', '_FIA')) |>
   # only want trees that have both FIA and FVS (re)measurements/projections, respectively
   dplyr::filter(!is.na(DIAMETER_FVS), !is.na(DIAMETER_FIA)) |>
+  mutate(BA_FIA = (pi/144)*(DIAMETER_FIA/2)^2, # BA in ft^2
+         BA_FVS = (pi/144)*(DIAMETER_FVS/2)^2) |>
   group_by(TUID, PID, SPECIES) |>
   dplyr::summarize(growth_pd = YEAR[2]-YEAR[1],
                    status_1 = HISTORY[1],
                    status_2 = HISTORY[2],
                    dg_FVS = DIAMETER_FVS[2]-DIAMETER_FVS[1],
                    dg_FIA = round(DIAMETER_FIA[2]-DIAMETER_FIA[1], 2),
+                   bag_FVS = BA_FVS[2]-BA_FVS[1],
+                   bag_FIA = BA_FIA[2]-BA_FIA[1],
                    initial_dbh = DIAMETER_FIA[1]) |>
   filter(dg_FIA >= 0) |>
   dplyr::ungroup()
 
-# Save outputs -----------------------------------------------------------------
+compare_growth2 <- full_join(tl_fvs2[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
+                             tl_fia2[c('DIAMETER', 'YEAR', 'TUID', 'PID', 'HISTORY', 'DAMAGE1', 'SPECIES')], 
+                             by = c('TUID', 'PID', 'YEAR'),
+                             suffix = c('_FVS', '_FIA')) |>
+  # only want trees that have both FIA and FVS (re)measurements/projections, respectively
+  dplyr::filter(!is.na(DIAMETER_FVS), !is.na(DIAMETER_FIA)) |>
+  mutate(BA_FIA = (pi/144)*(DIAMETER_FIA/2)^2, # BA in ft^2
+         BA_FVS = (pi/144)*(DIAMETER_FVS/2)^2) |>
+  group_by(TUID, PID, SPECIES) |>
+  dplyr::summarize(growth_pd = YEAR[2]-YEAR[1],
+                   status_1 = HISTORY[1],
+                   status_2 = HISTORY[2],
+                   dg_FVS = DIAMETER_FVS[2]-DIAMETER_FVS[1],
+                   dg_FIA = round(DIAMETER_FIA[2]-DIAMETER_FIA[1], 2),
+                   bag_FVS = BA_FVS[2]-BA_FVS[1],
+                   bag_FIA = BA_FIA[2]-BA_FIA[1],
+                   initial_dbh = DIAMETER_FIA[1]) |>
+  filter(dg_FIA >= 0) |>
+  dplyr::ungroup()
+
+
+
 tree_list <- bind_rows(sim1$tree_list, 
                        bind_rows(lapply(sim2, `[[`, 'tree_list')),
                        .id = 'interval')
