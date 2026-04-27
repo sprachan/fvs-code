@@ -22,8 +22,9 @@ compare_growth$larch <- ifelse(compare_growth$SPECIES == 73, 1, 0)
 
 mod_data <- list(N = nrow(compare_growth),
                  N_plots = length(unique(compare_growth$PID)),
-                 G_r = compare_growth$dg_FIA/compare_growth$dg_FVS,
-                 initial_dbh = compare_growth$initial_dbh,
+                 G_r = compare_growth$bag_FIA/compare_growth$bag_FVS,
+                 # center initial DBH
+                 initial_dbh = compare_growth$initial_dbh-mean(compare_growth$initial_dbh),
                  plot_id = compare_growth$stan_plot_id,
                  larch = compare_growth$larch)
 
@@ -33,7 +34,6 @@ lvl2b <- stan_model(file = here('scripts', '04b_lvl2_plot_species_size.stan'))
 
 lvl2a_fit <- sampling(lvl2a, data = mod_data, chains = 4, iter = 3000)
 
-# very slow sampling, consider centering DBH to improve.
 lvl2b_fit <- sampling(lvl2b, data = mod_data, chain = 4, iter = 3000)
 
 # Get draws and diagnostics ----------------------------------------------------
@@ -61,7 +61,7 @@ hist(alpha_plot_rhats) # all < 1.01
 fit2a_params <- as.data.frame(lvl2a_fit, 
                               pars = c('beta_larch', 'rate', 'plot_mean',
                                        'sigma_plot', 'alpha_plot'))
-fit2a_diagnostics <- summary(lvl2a_fit, probs = c(0.025, 0.1, 0.5, 0.9, 0.975))$summary
+fit2a_diagnostics <- as.data.frame(summary(lvl2a_fit, probs = c(0.025, 0.1, 0.5, 0.9, 0.975))$summary)
 
 fit2b_params <- as.data.frame(lvl2b_fit, 
                               pars = c('beta_larch', 'beta_size', 'rate', 'plot_mean',

@@ -3,8 +3,8 @@
 // where the scale factor, beta, is not hierarchical.
 //
 
-// The input data is the vector G_r (the ratio of FIA diameter growth to FVS
-// diameter growth), of length 'N'.
+// The input data is the vector G_r (the ratio of FIA basal area increment to FVS
+// basal area increment), of length 'N'.
 
 functions{
   real gamma_zeroes_lpdf(vector y, real shape, real rate){

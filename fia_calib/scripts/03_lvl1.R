@@ -26,7 +26,7 @@ mod <- stan_model(file = here('scripts', '03_lvl1.stan'))
 # stan expects data object to be named list with N (sample size), dg_fvs (vector),
 #> and dg_fia (vector)
 mod_data <- list(N = nrow(compare_growth),
-                  G_r = compare_growth$dg_FIA/compare_growth$dg_FVS)
+                 G_r = compare_growth$bag_FIA/compare_growth$bag_FVS)
 
 # sample using HMC to approximate posterior
 fit <- sampling(mod, data = mod_data, chains = 4, iter = 3000)

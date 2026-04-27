@@ -48,7 +48,7 @@ compare_growth_full$larch <- ifelse(compare_growth_full$SPECIES == 73, 1, 0)
 # Prep data for stan -----------------------------------------------------------
 mod_data <- list(N = nrow(compare_growth_full),
                  N_plots = length(unique(compare_growth_full$stan_plot_id)),
-                 G_r = compare_growth_full$dg_FIA/compare_growth_full$dg_FVS,
+                 G_r = compare_growth_full$bag_FIA/compare_growth_full$bag_FVS,
                  larch = compare_growth_full$larch,
                  plot_id = compare_growth_full$stan_plot_id,
                  evap = stand_data$rescaled_def,
