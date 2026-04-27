@@ -92,8 +92,8 @@ fit_diagnostics <- summary(fit, pars = c('rate',
                                          'beta_larch',
                                          'alpha_plot'))$summary
 
-min(fit_diagnostics[,'n_eff']) # 890...this is a bit low.
-max(fit_diagnostics[,'Rhat']) # 1.003
+min(fit_diagnostics[,'n_eff']) # 1425
+max(fit_diagnostics[,'Rhat']) # 1.005
 saveRDS(list(draws = fit_params, diagnostics = fit_diagnostics), 
         'model_outputs/lvl3_evap_density_species_fit.RDS')
 
