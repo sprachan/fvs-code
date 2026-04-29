@@ -170,10 +170,11 @@ I simulated tree growth for all stands retained after filtering. I simulated gro
 #| label: run-FVS
 
 ############ Windows only #################
-fvs_runs <- file.path('fvs_runfiles')
-fvs_bin <- file.path(fvs_dir, 'FVSbin')
+
 
 if(sys_os == 'windows'& run == TRUE){
+  fvs_runs <- file.path('fvs_runfiles')
+  fvs_bin <- file.path(fvs_dir, 'FVSbin')
   message('Running FVS...')
   # Projection parameters
   num_years <- 11 # overwritten by the REM_YEAR column
