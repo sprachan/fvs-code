@@ -17,21 +17,21 @@ pretty_varname <- function(varname){
   }
 }
 
-plot_joint <- function(df, x, y, ...){
+plot_joint <- function(df, y, x, ...){
   # only non log-transformed predictor is scale
   if(deparse(substitute(x)) == 'scale'){
     p <- ggplot(df, aes(x = {{x}}, y = exp({{y}})))
   }else if(deparse(substitute(y)) == 'scale'){
     p <- ggplot(df, aes(x = exp({{x}}), y = {{y}}))
   }else{
-    # everybody else gets exponentiated to get actuall effect
+    # everybody else gets exponentiated to get actual effect
     p <- ggplot(df, aes(x = exp({{x}}), y = exp({{y}})))
   }
   p+
     geom_bin_2d(...)+
     scale_fill_viridis(limits = c(0, 80))+
-    labs(x = pretty_varname(deparse(substitute(y))),
-         y = pretty_varname(deparse(substitute(x))))
+    labs(x = pretty_varname(deparse(substitute(x))),
+         y = pretty_varname(deparse(substitute(y))))
 }
 
 # Read in data -----------------------------------------------------------------
