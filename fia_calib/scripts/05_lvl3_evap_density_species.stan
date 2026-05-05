@@ -32,7 +32,7 @@ data {
 
 parameters {
   // tree level parameters
-  real<lower=0> rate;
+  real<lower=0> scale;
   real beta_larch;
   
   // plot parameters
@@ -46,12 +46,12 @@ parameters {
 transformed parameters{
   vector[N_plots] alpha_plot = beta_0+beta_evap.*evap+beta_density.*density + sigma_plot.*alpha_plot_std;
   vector[N] mu = exp(alpha_plot[plot_id]+beta_larch.*larch);
-  vector[N] shape = mu*rate;
+  vector[N] shape = mu/scale;
 }
 
 model {
   // tree-level priors
-  rate ~ cauchy(0, 1); // draw one value total
+  scale ~ cauchy(0, 1); // draw one value total
   beta_larch ~ normal(0, 0.5);
   
   // plot-level priors
@@ -62,6 +62,9 @@ model {
   sigma_plot ~ normal(0, 1); 
 
   // data model
-  G_r ~ gamma_zeroes(shape, rate);
+  G_r ~ gamma_zeroes(shape, 1/scale);
 }
 
+generated quantities {
+  array[N] real y_rep = gamma_rng(shape, 1/scale);
+}
