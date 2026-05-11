@@ -1,3 +1,11 @@
+## Project Goals
+
+The Forest Vegetation Simulator (FVS) is generally more accurate when it is calibrated to the stands that the user is projecting, but this requires growth data that are costly to obtain.
+
+The US Forest Service's Forest Inventory and Analysis (FIA) National Forest Inventory provides a broad, publicly available dataset of tree growth.
+
+This project examines how FIA data can be used to both to calibrate FVS and to understand why it needs calibration in the first place.
+
 ## File Tree
 Directories marked with * are ignored by git.
 ```
@@ -6,30 +14,26 @@ fia_calib
 |   | All project data lives here. 
 |   |
 |   |-- raw_data
-|   |   | Untouched, raw data lives here. This folder should be treated as read-
+|   |   | Untouched, raw data lives here. This folder is treated as read-
 |   |   | only for scripts.
 |   |   |
 |   |   |-- fia
-|   |   |   | Directly downloaded from FIA datamart.
-|   |   |   |-- SQLite_FIADB_ID.db* 
-|   |   |   |-- SQLite_FIADB_MT.db*
+|   |   |   | .db files, Directly downloaded from FIA datamart. (*)
+|   |   |
 |   |   |-- lubrecht
 |   |   |   | Shapefiles for boundary, tree lists, and FVS-formatted xlsx files.
+|   |   |
 |   |   |-- fvs_blank.xlsx
+|   |   |   | Blank excel sheet for FVS data, for reference.
+|   |   |
+|   |   |-- env
+|   |   |   | Environmental covariate data, usually rasters.
 |   |   
 |   |-- fvs_ready
-|   |   | Files produced by 02_fia2fvs.R. These are data files ready to be input
-|   |   | into FVS as stand or tree lists.
-|   |   |
-|   |   |-- firstpassFIA2FVS.RData
-|   |   |-- FVS_Lubrecht_2018.xlsx
-|   |   |-- FVS_Lubrecht_2023.xlsx
-|   |   |-- FVSstandInitAll.rds
-|   |   |-- FVStreeInitAll.rds
-|   |   |-- lubrecht_FVS.xlsx
+|   |   | Data files ready to be input into FVS as stand or tree lists.
 |   |
 |   |-- fvs_runFiles
-|   |   | .key, .OUT, .tre, and .trl files from running FVS. Organized into|
+|   |   | .key, .OUT, .tre, and .trl files from running FVS. Organized into
 |   |   | sub-directories, with each directory containing files from a single 
 |   |   | run.
 |   |
@@ -38,24 +42,20 @@ fia_calib
 |   |   | RData.
 |   
 |-- reports*
-|   | Quarto documents, pdfs, HTML files, and so on generated for class reports.
-|   |-- fors538
-|   |-- fors591
+|   | Quarto documents, pdfs, HTML files, and so on.
 |   
 |-- scripts
-|   | R scripts that make up the core of analysis. Note that analysis for fors538 is also in the report PDF.
-|   |-- lubrecht_scripts
-|   |   |-- 01_lubrecht_prep
-|   |   |-- 02_lubrecht_mults
-|   |   |-- 03_lubrecht_project
-|   |   |-- 04_lubrecht_analysis
+|   | R scripts that make up the core of analysis. 
+|   |-- 01a_prep_FIA.R -- get FIA data and prepare for FVS runs
+|   |-- 01b_get_deficit.R -- get and process climatic water deficit data
+|   |-- 02_uncalib_run.R -- run all FIA plots through FVS with calibration off.
+|   |-- 03_lvl1.R, .stan -- simple Bayesian model for scale factors
+|   |-- 04_lvl2_models.R, .stan -- 2-level hierarchical Bayesian model for 
+|   |                               scale factors. 2 variations.
+|   |-- 05_lvl3_models.R, .stan -- 3-level hierarchical Bayesian model for
+|   |                               scale factors. 2 variations.
+|   |-- 06_model_checks.R -- posterior predictive checks and visuals
 |
-|-- labnotes*
-|   | Quarto documents that contain code , notes, descriptions of data and
-|   | outputs, etc. "Lab Notebooks" to document analysis and the progress
-|   | of development (supplementing Git commit log).
-|   |-- labnotes_fall2025
-|   |-- labnotes_spring2026
 |
 |-- fia_calib.RProj
 |-- README.md
