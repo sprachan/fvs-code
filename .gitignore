@@ -11,7 +11,7 @@ html/
 *.csl
 *.xlsx
 fia_calib/labnotes/
-fia_calib/reports/fors*
+fia_calib/reports/
 misc_code/
 fia_calib/scripts/superceded/
 fia_calib/data/raw_data/
