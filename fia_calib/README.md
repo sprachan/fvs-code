@@ -18,7 +18,7 @@ fia_calib
 |   |   | only for scripts.
 |   |   |
 |   |   |-- fia
-|   |   |   | .db files, Directly downloaded from FIA datamart. (*)
+|   |   |   | .db files, directly downloaded from FIA datamart. (*)
 |   |   |
 |   |   |-- lubrecht
 |   |   |   | Shapefiles for boundary, tree lists, and FVS-formatted xlsx files.
@@ -57,6 +57,9 @@ fia_calib
 |   |-- 06_model_checks.R -- posterior predictive checks and visuals
 |
 |
+|-- model_outputs*
+|   | .RData/.RDS files of fitted models from Stan.
+| 
 |-- fia_calib.RProj
 |-- README.md
 ```
