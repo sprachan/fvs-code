@@ -9,6 +9,7 @@ html/
 *.pptx
 *.bib
 *.csl
+*.xlsx
 fia_calib/labnotes/
 fia_calib/reports/fors*
 misc_code/
