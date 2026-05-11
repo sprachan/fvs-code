@@ -1,0 +1,543 @@
+---
+title: "GPHY489 Final Project"
+author: "Sejal Prachand"
+format: 
+  html:
+    embed-resources: true
+    toc: true
+    toc-float: true
+    df-print: kable
+bibliography: references.bib
+---
+
+## Introduction
+
+Forests can limit global warming because they can sequester carbon that would otherwise be atmospheric CO~2~ [@munro2025; @marvin2023; @smyth2014]. As such, forests are a key source for carbon credits [@gorain2025] and are increasingly being managed for carbon sequestration in addition to other management goals such as timber harvest, wildlife habitat, and recreation [@marvin2023]. Managing for carbon requires accurate estimates of current and future carbon stocks by principle [@munro2025] and, for managers seeking to sell carbon credits, by regulation [@arbcomp2013]. Carbon sequestration in live trees over time is a core component of forest carbon stocks. Because sequestration is driven by tree growth, modeling future carbon stocks requires accurate predictions of tree growth. Additionally, understanding how management for carbon affects possible merchantable timber yield – and therefore the economic sustainability of management operations – requires accurate prediction of tree volumes.
+
+Forest growth and yield models are essential tools for predicting future carbon and tree volumes. Many possible growth and yield models exist, each with different histories, strengths, and weaknesses [@weiskittel2011]. By definition, models are necessary abstractions. Each model is designed using simplifying assumptions to enable prediction and inference. When using a model to inform management, these assumptions may lead to unrealistic or unexpectedly inaccurate results that could mislead decision-makers. Thus, it is essential to understand the assumptions underlying the particular models used for management, assess how assumptions affect model performance, and correct for those assumptions as necessary.
+
+The Forest Vegetation Simulator (FVS) is a widely used collection of growth and yield models developed by the United States Forest Service [@crookston2005; @joo2025]. The Inland Empire variant of FVS (FVS-IE), covering western Montana, northern Idaho, and eastern Washington, was first developed as the Prognosis model for pure lodgepole pine (*Pinus contorta*) stands by @stage1973 and was further modified to include other common Rocky Mountain tree species (including western larch *Larix occidentalis* and Douglas-fir, *Pseudotsuga menziesii*) by @wykoff1990 using data from \> 44,000 trees across the northern Rockies. FVS-IE has been regularly updated to use "best available" data [@dixon2002] since its initial development in the 70s, but the core logic and mathematics underpinning the model has remained the same. Large trees ($\geq$ 3" DBH) are projected forward in time by estimating diameter increment first, followed by height increment. The height increment prediction depends on diameter increment as a predictor, and these growth values are then used to calculate stand-level attributes, such as merchantable timber and stand carbon, at a pre-specified future year. Thus, stand-level attributes of interest ultimately depend primarily on the accuracy of the diameter increment model.
+
+The large tree diameter growth model at the core of FVS relies on the assumption that tree growth is relatively homogeneous across stands that have the same site variables (elevation, slope, aspect, habitat type, and location code). However, FVS-IE has limited resolution in habitat type and location code because it is a regional growth model. Therefore, stands with identical site variables may still have meaningful variation in tree growth rates due to small-scale environmental factors (e.g., local climate). The violation of the assumption of homogeneous growth across local climates suggests that FVS-IE may inaccurately predict tree growth, volume, and carbon at local scales. Therefore, understanding patterns in FVS-IE inaccuracy is an essential first step toward ensuring that FVS-IE can be a reliable tool for management.
+
+In this work, I evaluated FVS-IE prediction error over space and by a climate variable, climatic water deficit. To do so, I used publicly available water balance data and tree inventory data.
+
+## Hypotheses
+
+I hypothesize that FVS-IE is unable to account for differences in growth driven by local-scale climate variation. Furthermore, work in other variants has shown that FVS generally overpredicts tree growth [e.g., @herbert2023; @ex2014; @diaz2018]. From this hypothesis and rationale, I predict the following:
+
+1.  FVS-IE prediction accuracy will be highest in the most productive areas of the Inland Empire, which are concentrated toward the western edge of the region due to orographic effects from the Bitterroot Range.
+
+2.  Increased climatic water deficit, a proxy for increased drought stress, will be associated with higher FVS-IE prediction errors because the model insufficiently accounts for this climate variable.
+
+## Technical Approach
+
+### Preliminaries
+
+By nature, project relies heavily on the Forest Vegetation Simulator (FVS; [more information here](https://www.fs.usda.gov/managing-land/forest-management/fvs/software)). Unfortunately, this software is currently only available for Windows. It is (or was) possible to build FVS on Linux, but the Forest Service has removed build instructions for non-Windows systems as of April 2026. To make this project portable across systems, I have included the code to re-run FVS, but it is evaluated only if the OS is Windows and the user has FVS installed on their machine. Windows-only code is demarcated with the comment `##### Windows only ######` at the beginning of the code chunk. Otherwise, FVS simulation results are read from .RDS files bundled with this project. These .RDS files were created with the code included in this document. The below (folded) chunk checks the system OS. If the OS is Windows, it checks for an FVS installation in the home (`C:`) directory and messages with results. If needed, the search directory can be modified by hand; Quarto does not support interactive functions like `menu()`. If FVS and our specific variant (FVS-IE) are found in the system, FVS code will be run. Otherwise, simulation results will be loaded from `.RDS` files.
+
+```{r}
+#| label: check-FVS
+#| code-fold: true
+
+sys_os <- tolower(Sys.info()['sysname'])
+run <- FALSE
+if(sys_os == 'windows'){
+  ## MODIFY IF FVS IS NOT AT THIS LEVEL ##
+  root <- 'C:'
+  ########################################
+  fvs_dir <- file.path(root, 'FVS', 'FVSSoftware')
+  
+  message('Looking for FVS/FVSSoftware in ', root, ' modify if necessary.')
+  if(dir.exists(fvs_dir)){
+    message('FVS found at ', fvs_dir, '. Checking for FVSIE install...')
+    if(file.exists(file.path(fvs_dir, 'FVSbin', 'FVSie.dll'))){
+      message('FVSIE found at ', file.path(fvs_dir, 'FVSbin', 'FVSie.dll'), 
+              '. \n FVS will run unless variable `run` is manually set to FALSE.')
+      run <- TRUE
+    }else{
+      message('FVSIE not found at ', file.path(fvs_dir, 'FVSbin', 'FVSie.dll'), 
+              ' FVS will not be run.')
+    }
+  }else{
+    message('FVS/FVSSoftware not found in ', root, '. FVS results will be loaded from .RDS files and FVS will not be run.')
+  }
+}else{
+  message('Detected System OS is not Windows. FVS will not be run and simulation results will be loaded from .RDS files')
+  
+}
+```
+
+To carry out the analysis, I used a collection of published R packages [@wickham2023; @wickham2016; @pebesma2018; @hijmans2025; @massicotte2025; @pedersen2025] and an R package that I am currently developing called `rFVSIEtools`.
+
+```{r}
+#| label: load-deps
+#| collapse: true
+
+library(dplyr) # data wrangling
+library(ggplot2) # pretty plots
+library(terra) # work with spatial data
+library(sf) # more spatial data tools
+library(rnaturalearth) # state outlines
+library(patchwork) # compose ggplots into nice figures
+library(colorspace) # more diverging color scales
+
+# if my custom package is not installed, get it from GitHub (it's not on CRAN)
+if(system.file(package = 'rFVSIEtools') == ''){
+  message('Installing development package rFVSIEtools from Github')
+  remotes::install_github(repo = 'sprachan/FVSIE-tools')
+}
+
+library(rFVSIEtools)
+```
+
+```{r}
+#| label: file-paths
+fia_path <- file.path('data', 'raw_data')
+fvs_ready <- file.path('data', 'fvs_ready')
+```
+
+### Forest Inventory and Analysis Data
+
+To test the hypotheses and predictions described in the previous section, I accessed publicly available Forest Inventory and Analysis (FIA) data. This dataset consists of tree measurements and remeasurements on plots established across the entire country. I downloaded FIA data for Montana and Idaho from the [FIA Datamart](https://research.fs.usda.gov/products/dataandtools/fia-datamart), and the .db files are included in this project folder for full reproducibility. Then, I filtered FIA data to the study region of western Montana and northern Idaho and only retained forested plots that were measured after the new, standardized inventory protocol was established in 2001. To avoid confounding effects of plot history when investigating deviation due to local-scale variation, I only retained data from plots that had no recent disturbance or treatment history. I limited this analysis to Douglas-fir (*Pseudotsuga menziesii*) and western larch (*Larix occidentalis*) growth because these are both common and commercially important species in the inland northwest.
+
+```{r}
+#| label: get-fvs-ready
+# Data directories and files
+fia_path <- file.path('data', 'raw_data')
+fvs_ready <- list(MT = NULL, ID = NULL)
+states <- c('MT', 'ID')
+
+for(i in seq_along(states)){
+  db_path <- file.path(fia_path, paste0('SQLite_FIADB_', states[i], '.db'))
+  fvs_ready[[i]] <- fetch_cond(db_loc = db_path, 'COND_STATUS_CD == 1, CONDPROP_UNADJ == 1, INVYR > 2001, DSTRBCD1 == 0, TRTCD1 == 0') |>
+    # use _ placeholder to pipe condition table into get_FIA_state()
+    get_FIA_state(db_path, fia_cond_subset = _, add_identifier = TRUE)
+}
+
+# Unlist fvs_ready stuff into separate stand and tree dataframes
+FVS_standInit <- bind_rows(fvs_ready$MT$FVS_StandInit,
+                           fvs_ready$ID$FVS_StandInit) |>
+  arrange(PID, INV_YEAR) |>
+  group_by(PID) |>
+  mutate(REM_CD = seq(0, n()-1),
+         N_REM = max(REM_CD),
+         FOREST = stringr::str_pad(FOREST, 2, pad = '0', side = 'left')) |>
+  filter(VARIANT == 'IE') |>
+  ungroup()
+
+FVS_treeInit <- bind_rows(fvs_ready$MT$FVS_TreeInit,
+                          fvs_ready$ID$FVS_TreeInit) |>
+  left_join(FVS_standInit[c('PID', 'INV_YEAR', 'REM_CD',  'N_REM')],
+            by = c('PID', 'INV_YEAR')) |>
+  # Only undamaged trees that are Douglas-fir or western larch
+  filter(DAMAGE1 == 0|is.na(DAMAGE1),
+         SPECIES %in% c(202, 73))
+
+rm(fvs_ready) # large list can go away
+```
+
+I only simulated tree growth for stands that had remeasurement data available. Furthermore, I only retained projected plots forward from first measurement to first *re*measurement.
+
+```{r}
+#| label: filter_stands
+t0_stands <- FVS_standInit |>
+  # N_REM is Number of REMeasurements; 
+  #> REMeasurement CoDe is 0 for install, 1 for first remeasure, 2 for second, etc
+  filter(N_REM >= 1) |>
+  # PID is Plot IDentifier, which is the unique code identifying each plot.
+  #> Stays the same across years.
+  dplyr::group_by(PID) |>
+  # year of first remeasurement
+  dplyr::mutate(REM_YEAR = ifelse(N_REM == 1, max(INV_YEAR), INV_YEAR[2])) |>
+  dplyr::ungroup() |>
+  filter(REM_CD == 0) |>
+  as.data.frame()
+
+# only want trees associated with selected stands
+t0_trees <- FVS_treeInit |>
+  inner_join(t0_stands['STAND_CN'], by = 'STAND_CN') |>
+  filter(HISTORY == 1, # alive at first remeasurement only
+         # large trees only
+         DIAMETER >= 3) 
+```
+
+### Simulate tree growth with FVS-IE
+
+I simulated tree growth for all stands retained after filtering. I simulated growth from the first measurement to the first remeasurement, allowing direct comparison of FVS projections with FIA remeasurements. I set a random seed for reproducibility, turned FVS's self-calibration feature off because it requires additional growth data, and turned tripling off (when tripling is on, FVS splits each tree record into three trees to stabilize random effects).
+
+```{r}
+#| label: run-FVS
+
+############ Windows only #################
+
+
+if(sys_os == 'windows'& run == TRUE){
+  fvs_runs <- file.path('fvs_runfiles')
+  fvs_bin <- file.path(fvs_dir, 'FVSbin')
+  message('Running FVS...')
+  # Projection parameters
+  num_years <- 11 # overwritten by the REM_YEAR column
+  triple <- FALSE
+  calibrate <- FALSE
+  regen <- FALSE
+  STDIDENT <- 'FIA_UNCALIB'
+  random_seed <- 2025
+  
+  # Directory for .key, .tre, and .out files
+  dt <- paste0('fia_uc_', format(Sys.Date(), '%b%d%Y'), '_', 
+               format(Sys.time(), '%H%M'), collapse = '')
+  out_dir <- file.path(fvs_runs, dt)
+  dir.create(out_dir)
+  
+  future::plan('multisession', workers = 5) # prep for parallel run
+  sim <- suppressMessages(run_FVS_parallel(stand_info = t0_stands, 
+                          tree_list = t0_trees, 
+                          n_batches = 4, 
+                          simple_output = TRUE, 
+                          out_dir = out_dir, fvs_bin = fvs_bin, 
+                          year_col = 'REM_YEAR',
+                          proj_len = num_years, triple = triple,
+                          calibrate = calibrate, add_regen = regen,
+                          STDIDENT = STDIDENT, random_seed = random_seed))
+  
+  # get clean FVS tree list
+  tl_fvs <- sim$tree_list |>
+    group_by(PID) |>
+    mutate(REM_CD = case_when(year == min(year) ~ 0, year == max(year) ~ 1, 
+                              .default = NA)) |>
+    rename(DIAMETER = dbh,
+           YEAR = year)
+  rm(sim)
+  saveRDS(tl_fvs, file.path('data', 'sim_outputs', 'fvs_treelist_output.RDS'))
+}else{
+  message('Detected OS not Windows and/or run set to FALSE; FVS not run.')
+}
+```
+
+
+If not on Windows (or if the variable `run` was set to `FALSE` on a windows machine), simulation results from running the above code will be directly loaded.
+
+```{r}
+#| label: load-fvs-runs
+if(sys_os != 'windows' | run == FALSE){
+  message('Loading simulation outputs from file...')
+  tl_fvs <- readRDS(file.path('data', 'sim_outputs', 'fvs_treelist_output.RDS'))
+}
+```
+
+After simulating tree growth, I calculated FVS prediction error.
+
+```{r}
+#| label: calculate-pred-err
+#| collapse: true
+tl_fia <- FVS_treeInit |>
+  # TUID = Tree Unique IDentifier. Code that identifies each tree; stays the 
+  #> same each year.
+  filter(TUID %in% tl_fvs$TUID, REM_CD < 2) |>
+  rename(YEAR = INV_YEAR)
+
+# Comparing growth requires FVS and FIA data to be together
+compare_growth <- full_join(tl_fvs[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
+                            tl_fia[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID', 'HISTORY', 'DAMAGE1', 'SPECIES')], 
+                            by = c('TUID', 'REM_CD', 'PID', 'YEAR'),
+                            suffix = c('_FVS', '_FIA')) |>
+  # only want trees that have both FIA and FVS (re)measurements/projections
+  filter(!is.na(DIAMETER_FVS), !is.na(DIAMETER_FIA)) |>
+  mutate(BA_FVS = pi*(DIAMETER_FVS/(12*2))^2,
+         BA_FIA = pi*(DIAMETER_FIA/(12*2))^2) |>
+  # want to summarize so that each unique tree gets its own row,
+  #> but need to also keep PID and SPECIES columns.
+  group_by(TUID, PID, SPECIES) |>
+  summarize(growth_pd = YEAR[2]-YEAR[1],
+            status_1 = HISTORY[1],
+            status_2 = HISTORY[2],
+            dg_FVS = DIAMETER_FVS[2]-DIAMETER_FVS[1],
+            dg_FIA = round(DIAMETER_FIA[2]-DIAMETER_FIA[1], 2),
+            bag_FVS = BA_FVS[2]-BA_FVS[1],
+            bag_FIA = BA_FIA[2]-BA_FIA[1],
+            initial_dbh = DIAMETER_FIA[1]) |>
+  # negative growth values are probably from measurement error, let's ignore
+  filter(dg_FIA >= 0) |>
+  ungroup() |>
+  left_join(FVS_standInit[c('PID', 'LONGITUDE', 'LATITUDE', 'PV_CODE')], by = 'PID', 
+  # multiple trees per stand will have the same coordinates bc 
+  #> coordinates are stand-level
+            relationship = 'many-to-many')
+
+stand_err <- compare_growth |>
+  mutate(fvs_err = bag_FVS-bag_FIA,
+         species_name = ifelse(SPECIES == 73, 'western larch', 'Douglas-fir')) |>
+  group_by(PID, LONGITUDE, LATITUDE, species_name) |>
+  summarize(mean_err = mean(fvs_err)) |>
+  ungroup()
+
+stand_err_spat <- stand_err |>
+  st_as_sf(coords = c('LONGITUDE', 'LATITUDE'),
+           crs = st_crs('epsg:4269'))
+```
+
+
+### Extract Water Balance Data
+
+I used climatic water deficit to approximate drought stress, a biologically relevant variable that is not explicitly accounted for in FVS. FIA plot locations are fuzzed for privacy, so I extracted deficit from circular buffered areas around each provided plot location. FIA fuzzes coordinates for plots on private land more than public land (1 mi vs 0.5mi), so I matched buffer size to the appropriate radius for each plot (i.e., 1mi radius for plots on private land, 0.5mi radius for plots on public land). The documentation for FIA data indicated that the coordinates were collected in the NAD83 datum, so I used that datum to convert FIA data into a spatial data format.
+
+```{r}
+#| label: stand-locations
+stand_locs <- t0_stands |>
+  select(LATITUDE, LONGITUDE, PID, OWNCD, INV_YEAR, N_REM, REM_CD) |>
+  st_as_sf(coords = c('LONGITUDE', 'LATITUDE'),
+           crs = st_crs('epsg:4269')) 
+```
+
+```{r}
+#| label: buffer-locations
+# buffer each plot locations 0.5mi (if on public land) or 1mi (if on private land) 
+pub_radius <- 0.5*1609.344 # convert mi to m
+priv_radius <- 1609.344
+
+pub_buffer <- stand_locs[stand_locs$OWNCD < 40,] |>
+  vect() |>
+  buffer(width = pub_radius, quadsegs = 16) #quadsegs makes these a little smoother
+priv_buffer <- stand_locs[stand_locs$OWNCD >= 40,] |>
+  vect() |>
+  buffer(width = priv_radius, quadsegs = 16)
+```
+
+After calculating buffers, I calculated average deficit [from @tercek] within each buffer polygon. In order to reduce raster size and speed up computation, I first cropped it to the relevant study region (i.e., Montana and Idaho).
+
+```{r}
+#| label: crop-water-bal
+study_region <- rnaturalearth::ne_states(country = 'united states of america') |>
+  filter(iso_3166_2 %in% c('US-MT', 'US-ID')) |>
+  st_transform(crs = st_crs(stand_locs))
+
+deficit <- rast(file.path('data', 'raw_data', 
+                          'V_1_5_annual_gridmet_historical_Deficit_1980_2019_annual_means_cropped_units_mm.tif')) |>
+  terra::project(y = crs(stand_locs)) |>
+  crop(ext(study_region))
+```
+
+```{r}
+#| label: get-water-bal
+pub_deficits <- extract(deficit, pub_buffer, fun = mean, touches = TRUE, bind = TRUE) |>
+  as.data.frame()
+priv_deficits <- extract(deficit, priv_buffer, fun = mean, touches = TRUE, bind = TRUE) |>
+  as.data.frame()
+
+stand_deficits <- bind_rows(pub_deficits, priv_deficits)
+colnames(stand_deficits)[length(colnames(stand_deficits))] <- 'deficit'
+```
+
+
+### Evaluate error structures
+
+I evaluated error in basal area increment (not diameter increment) because FVS estimates basal area increment directly and calculates diameter increment from this value. I plotted FVS basal area prediction errors over the study region.
+
+:::{#fig-err-map}
+
+```{r}
+#| label: err-map
+err_map <- ggplot()+
+  geom_sf(data = stand_err_spat, aes(fill = mean_err), size = 2, 
+          pch = 21, stroke = 0.75, alpha = 0.75)+
+  geom_sf(data = st_crop(study_region, st_bbox(stand_err_spat)), fill = NA, lwd = 1)+
+  scale_fill_continuous_diverging(palette = 'Blue-Red 3', mid = 0)+
+  facet_wrap(facets = vars(species_name))+
+  coord_sf()+
+  theme_grey()
+
+err_map
+```
+Map of mean stand basal area increment prediction error for Douglas-fir (left) and western larch (right). Lighter colors are errors near 0, reds are overestimates (positive prediction error), and blues are underestimates (negative prediction error).
+:::
+
+The few plots with extremely large errors make it harder to see patterns, so I also mapped errors without extreme values as well.
+
+:::{#fig-err-map-cens}
+
+```{r}
+#| label: err-map-cens
+err_map_cens <- stand_err_spat |>
+  filter(mean_err <= 0.5, mean_err >= -0.5) |>
+ggplot()+
+    geom_sf(aes(fill = mean_err), size = 2, 
+          pch = 21, stroke = 0.75, alpha = 0.75)+
+  geom_sf(data = st_crop(study_region, st_bbox(stand_err_spat)), fill = NA, lwd = 1)+
+  scale_fill_continuous_diverging(palette = 'Blue-Red 3', mid = 0)+
+  facet_wrap(facets = vars(species_name))+
+  coord_sf()+
+  theme_grey()
+
+err_map_cens
+```
+
+Map of mean stand basal area increment prediction error for Douglas-fir (left) and western larch (right). Lighter colors are errors near 0, reds are overestimates (positive prediction error), and blues are underestimates (negative prediction error). Errors have been truncated from -0.5 to +0.5 for ease of visualization.
+
+:::
+
+In addition to examining error patterns over space, I modeled and visualized prediction error by longitude and latitude. I used linear models to explore the relationships between error and longitude, converting longitude into distance (in 100s of km) from 117$^\circ$ W so that the coefficient on longitude represents the effect of moving 100km eastward. Similarly, I converted latitude into distance (in 100s of km) from 45$^\circ$N. I specified the models such that both the intercept and the slope vary by species, such that Douglas-fir and western larch were allowed to have different prediction error patterns over space.
+
+:::{#fig-err-lon}
+```{r}
+#| label: err-lon
+err_lon <- ggplot(stand_err, aes(x = LONGITUDE, y = mean_err, col = species_name))+
+  geom_point(alpha = 0.5)+
+  geom_smooth(method = 'lm', se = FALSE)+
+  geom_hline(yintercept = 0, col = 'black', lty = 'dashed')+
+  labs(x = 'Longitude, degrees',
+       y = expr(paste('Mean error in basal area increment prediction, ', 'ft'^2)),
+       col = 'Species')+
+  theme_bw()
+
+err_lon
+```
+Mean stand-level basal area increment prediction error increases with longitude (i.e., west-to-east movement), but the effect size varies by species. Pink is Douglas-fir, blue is western larch. 
+
+:::
+
+:::{#tbl-lon-lm}
+
+
+```{r}
+# LM
+compare_lons <- stand_err |>
+  mutate(LONGITUDE = -117) |>
+  st_as_sf(coords = c('LONGITUDE', 'LATITUDE'),
+           crs = st_crs(stand_locs))
+
+stand_err_spat <- stand_err_spat |>
+  # divide by 1000 to get km from m, divide again by 100 to get 100s of km
+  mutate(lon_dist = as.numeric(st_distance(compare_lons, geometry, by_element = TRUE))/100000)
+
+lon_lm <- lm(mean_err ~ lon_dist+factor(species_name)+lon_dist*factor(species_name), 
+             data = stand_err_spat)
+
+
+# R codes douglas-fir as the "base", then larch is an adjustment on top
+#> of that.
+data.frame(Coefficient = c('Douglas-fir intercept', 
+                           'Douglas-fir slope', 
+                           'Larch intercept',
+                           'Larch slope'),
+           Estimate = c(unname(coef(lon_lm))[1:2],
+                        unname(coef(lon_lm)[1])+unname(coef(lon_lm)[3]),
+                        unname(coef(lon_lm)[2])+unname(coef(lon_lm)[4])),
+           Standard_error = unname(summary(lon_lm)$coefficients[,2])) |>
+  mutate(Estimate = round(Estimate, 4))
+
+```
+
+Results from linear model for error as a function of distance (in 100s of km), with both slope and intercept allowed to vary by species.
+:::
+
+:::{#fig-err-lat}
+```{r}
+#| label: err-lat
+err_lat <- ggplot(stand_err, aes(x = LATITUDE, y = mean_err, col = species_name))+
+  geom_point(alpha = 0.25)+
+  geom_smooth(method = 'lm', se = FALSE)+
+  geom_hline(yintercept = 0, col = 'black', lty = 'dashed')+
+  labs(x = 'Latitude, degrees',
+       y = expr(paste('Mean error in basal area increment prediction, ', 'ft'^2)),
+       col = 'Species')+
+  theme_bw()
+compare_lats <- stand_err |>
+  mutate(LATITUDE = 45) |>
+  st_as_sf(coords = c('LONGITUDE', 'LATITUDE'),
+           crs = st_crs(stand_locs))
+
+err_lat
+```
+
+Mean stand-level basal area increment prediction error does not noticeably change with latitude (south to north). Pink is Douglas-fir, blue is western larch. 
+
+:::
+
+:::{#tbl-lat-lm}
+```{r}
+#| label: lat-lm
+stand_err_spat <- stand_err_spat |>
+  mutate(lat_dist = as.numeric(st_distance(compare_lats, geometry, by_element = TRUE))/100000)
+
+lat_lm <- lm(mean_err ~ lat_dist+factor(species_name)+lat_dist*factor(species_name), 
+             data = stand_err_spat)
+
+# R codes douglas-fir as the "base", then larch is an adjustment on top
+#> of that.
+data.frame(Coefficient = c('Douglas-fir intercept', 
+                           'Douglas-fir slope', 
+                           'Larch intercept',
+                           'Larch slope'),
+           Estimate = c(unname(coef(lat_lm))[1:2],
+                        unname(coef(lat_lm)[1])+unname(coef(lat_lm)[3]),
+                        unname(coef(lat_lm)[2])+unname(coef(lat_lm)[4])),
+           Standard_error = unname(summary(lat_lm)$coefficients[,2])) |>
+  mutate(Estimate = round(Estimate, 4))
+```
+
+Results from linear model for error as a function of north/south distance (in 100s of km), with both slope and intercept allowed to vary by species.
+:::
+
+Finally, I examined the relationship between error and climatic water balance.
+
+:::{#fig-err-cwd}
+```{r}
+stand_err <- stand_err |>
+  left_join(stand_deficits[c('PID', 'deficit')]) 
+
+err_cwd <-  ggplot(stand_err, aes(x = deficit, y = mean_err, col = species_name))+
+  geom_point(alpha = 0.5)+
+  labs(x = 'Stand Average Climatic Water Deficit, mm H2O', 
+       y = 'Stand Mean Basal Area Prediction Error, in',
+       col = 'Species')+
+  geom_smooth(se = FALSE, method = 'lm')+
+  geom_hline(yintercept = 0, lty = 'dashed')+
+  theme_bw()
+
+err_cwd
+```
+
+Mean stand-level basal area increment prediction error does not noticeably change with climatic water deficit, a measure of drought stress. Pink is Douglas-fir, blue is western larch. 
+
+:::
+
+
+:::{#tbl-err-cwd}
+
+```{r}
+
+cwd_lm <- lm(mean_err ~ deficit+factor(species_name)+deficit*factor(species_name), 
+             data = stand_err)
+
+# R codes douglas-fir as the "base", then larch is an adjustment on top
+#> of that.
+data.frame(Coefficient = c('Douglas-fir intercept', 
+                           'Douglas-fir slope', 
+                           'Larch intercept',
+                           'Larch slope'),
+           Estimate = c(unname(coef(cwd_lm))[1:2],
+                        unname(coef(cwd_lm)[1])+unname(coef(cwd_lm)[3]),
+                        unname(coef(cwd_lm)[2])+unname(coef(cwd_lm)[4])),
+           Standard_error = unname(summary(cwd_lm)$coefficients[,2])) |>
+  mutate(Estimate = round(Estimate, 4))
+```
+Results from linear model for prediction error in basal area increment by climatic water deficit, with both slope and intercept allowed to vary by species. There was no detectable relationship for either species.
+
+:::
+
+## Conclusions
+
+Generally, FVS overestimated basal area increment. These predictions errors were generally worse for Douglas-fir than western larch, but there were not clear spatial patterns when mapping the entire region (@fig-err-map). However, examining results on solely the longitude and solely the latitude axis provided more insight. The longitudinal gradient in basal area prediction error (@fig-err-lon; @tbl-lon-lm) and undetectable effect of latitude (@fig-err-lat; @tbl-lat-lm) suggest that orographic effects from the north/south running Bitterroot range could be adding to the need for FVS calibration; FVS performs better west of the Bitterroots. These results are consistent with my prediction 1, supporting my hypothesis that FVS-IE is unable to account for differences in growth driven by local-scale climate variation. However, prediction errors appear heteroskedastic with respect to longitude: they are more variable in western stands than eastern stands. Thus, the simple linear model results may be biased and further exploration is needed.
+
+Contrary to my second prediction, climatic water deficit had no detectable relationship with prediction error (@fig-err-cwd; @tbl-err-cwd). That is, FVS predicted basal area just as accurately for more drought-stressed plots than less drought-stressed plots. This suggests that drought stress is not one of the "undetectable local variables" discussed earlier. These results, combined with the findings of a longitudinal relationship, suggest that climate variables with more west-to-east variation could be more important than deficit in this context. 
+
+
+## System Info
+
+```{r}
+Sys.info()
+```
+
+
+## References

@@ -65,8 +65,8 @@ fit <- sampling(mod, data = mod_data, chains = 4, iter = 3000)
 # Examine fit ----------------------------------------------------------
 check_hmc_diagnostics(fit) # no issues
 
-# good mixing, though some jumping around in the intercept
-traceplot(fit, pars = c('rate', 'sigma_plot',
+# good mixing
+traceplot(fit, pars = c('scale', 'sigma_plot',
                         'beta_larch',
                         'beta_evap', 'beta_density', 'beta_0'))
 
@@ -77,23 +77,28 @@ traceplot(fit, pars = paste0('alpha_plot[', samp, ']'))
 alpha_plot_rhats <- summary(fit, pars = 'alpha_plot')$summary[,'Rhat']
 hist(alpha_plot_rhats) # all < 1.01
 
-fit_params <- as.data.frame(fit, pars = c('rate', 
+fit_params <- as.data.frame(fit, pars = c('scale', 
                                           'sigma_plot',
                                           'beta_evap',
                                           'beta_density',
                                           'beta_0',
                                           'beta_larch',
                                           'alpha_plot'))
-fit_diagnostics <- summary(fit, pars = c('rate', 
+beta_ijs <- as.data.frame(fit, pars = 'mu')
+
+post_pred <- as.data.frame(fit, pars = 'y_rep')
+fit_diagnostics <- as.data.frame(summary(fit, pars = c('scale', 
                                          'sigma_plot',
                                          'beta_evap',
                                          'beta_density',
                                          'beta_0',
                                          'beta_larch',
-                                         'alpha_plot'))$summary
+                                         'alpha_plot'))$summary)
 
-min(fit_diagnostics[,'n_eff']) # 1425
-max(fit_diagnostics[,'Rhat']) # 1.005
-saveRDS(list(draws = fit_params, diagnostics = fit_diagnostics), 
+
+min(fit_diagnostics[,'n_eff']) # > 1200
+max(fit_diagnostics[,'Rhat']) # < 1.01
+saveRDS(list(draws = fit_params, diagnostics = fit_diagnostics, beta_ijs = beta_ijs,
+             post_pred = post_pred), 
         'model_outputs/lvl3_evap_density_species_fit.RDS')
 

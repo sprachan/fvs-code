@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.8.25">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Sejal Prachand">
+
+<title>Locally calibrating the Forest Vegetation Simulator</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+  margin-bottom: 0em;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
+
+
+<script src="final_project_files/libs/clipboard/clipboard.min.js"></script>
+<script src="final_project_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="final_project_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="final_project_files/libs/quarto-html/axe/axe-check.js" type="module"></script>
+<script src="final_project_files/libs/quarto-html/popper.min.js"></script>
+<script src="final_project_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="final_project_files/libs/quarto-html/anchor.min.js"></script>
+<link href="final_project_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="final_project_files/libs/quarto-html/quarto-syntax-highlighting-7b89279ff1a6dce999919e0e67d4d9ec.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="final_project_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="final_project_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="final_project_files/libs/bootstrap/bootstrap-9e3ffae467580fdb927a41352e75a2e0.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<meta name="mermaid-theme" content="neutral">
+<script src="final_project_files/libs/quarto-diagram/mermaid.min.js"></script>
+<script src="final_project_files/libs/quarto-diagram/mermaid-init.js"></script>
+<link href="final_project_files/libs/quarto-diagram/mermaid.css" rel="stylesheet">
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN" && texText && texText.data) {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="fullcontent quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Locally calibrating the Forest Vegetation Simulator</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Sejal Prachand </p>
+          </div>
+  </div>
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="introduction" class="level2">
+<h2 class="anchored" data-anchor-id="introduction">Introduction</h2>
+<p>Forests are widely recognized as important systems for limiting global warming because they can sequester carbon that would otherwise be atmospheric CO<sub>2</sub> <span class="citation" data-cites="munro2025 marvin2023 smyth2014">(<a href="#ref-munro2025" role="doc-biblioref">Munro et al. 2025</a>; <a href="#ref-marvin2023" role="doc-biblioref">Marvin et al. 2023</a>; <a href="#ref-smyth2014" role="doc-biblioref">Smyth et al. 2014</a>)</span>. As such, forests are a key source for carbon credits <span class="citation" data-cites="gorain2025">(<a href="#ref-gorain2025" role="doc-biblioref">Gorain et al. 2025</a>)</span> and are increasingly being managed for carbon sequestration in addition to other management goals such as timber harvest, wildlife habitat, and recreation <span class="citation" data-cites="marvin2023">(<a href="#ref-marvin2023" role="doc-biblioref">Marvin et al. 2023</a>)</span>. Managing for carbon requires accurate estimates of current and future carbon stocks by principle <span class="citation" data-cites="munro2025">(<a href="#ref-munro2025" role="doc-biblioref">Munro et al. 2025</a>)</span> and, for managers seeking to sell carbon credits, by regulation <span class="citation" data-cites="arbcomp2013">(<a href="#ref-arbcomp2013" role="doc-biblioref"><span>“ARB Compliance Offset Program: U.s. Forest Offset Protocol Frequently Asked Questions”</span> 2013</a>)</span>. Carbon sequestration in live trees over time is a core component of forest carbon stocks. Because sequestration is driven by tree growth, modeling future carbon stocks requires accurate predictions of tree growth. Additionally, understanding how management for carbon affects possible merchantable timber yield – and therefore the economic sustainability of management operations – requires accurate prediction of tree volumes.</p>
+<p>Forest growth and yield models are essential tools for predicting future carbon and tree volumes. Many possible growth and yield models exist, each with different histories, strengths, and weaknesses <span class="citation" data-cites="weiskittel2011">(<a href="#ref-weiskittel2011" role="doc-biblioref">Weiskittel et al. 2011</a>)</span>. By definition, models are necessary abstractions. Each model is designed using simplifying assumptions to enable prediction and inference. When using a model to inform management, these assumptions may lead to unrealistic or unexpectedly inaccurate results that could mislead decision-makers. Thus, it is essential to understand the assumptions underlying the particular models used for management, assess how assumptions affect model performance, and correct for those assumptions as necessary.</p>
+<p>The Forest Vegetation Simulator (FVS) is a widely used collection of growth and yield models developed by the United States Forest Service <span class="citation" data-cites="crookston2005 joo2025">(<a href="#ref-crookston2005" role="doc-biblioref">Crookston and Dixon 2005</a>; <a href="#ref-joo2025" role="doc-biblioref">Joo et al. 2025</a>)</span>. The Inland Empire variant of FVS (FVS-IE), covering western Montana, northern Idaho, and eastern Washington, was first developed as the Prognosis model by <span class="citation" data-cites="stage1973">Stage (<a href="#ref-stage1973" role="doc-biblioref">1973</a>)</span> and was further modified by <span class="citation" data-cites="wykoff1990">Wykoff (<a href="#ref-wykoff1990" role="doc-biblioref">1990</a>)</span> using data from just over 44,000 trees across the northern Rockies. FVS-IE has been regularly updated to use “best available” data <span class="citation" data-cites="dixon2002">(<a href="#ref-dixon2002" role="doc-biblioref">Dixon 2002</a>)</span> since its initial development in the 70s, but the core logic of the model has remained the same (<a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>). Large trees (<span class="math inline">\(\geq\)</span> 3” DBH) are projected forward in time by estimating diameter increment first, followed by height increment (<a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>). Diameter growth (<span class="math inline">\(\widehat G_D\)</span>) for each individual tree is estimated as squared inside bark diameter (DDS, calculated as <span class="math inline">\((D_\text{inside bark} + \widehat G_D)^2 – D_\text{inside bark}^2)\)</span> using a combination of site variables, competition metrics, and tree characteristics. The resulting value is then used alongside habitat type and tree size (DBH, notated as <span class="math inline">\(D_0\)</span>, and height) to estimate height growth (<span class="math inline">\(\widehat G_H\)</span>; <a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>). The model’s default coefficients for the diameter increment component of the model were originally developed using increment core data <span class="citation" data-cites="wykoff1990">(<a href="#ref-wykoff1990" role="doc-biblioref">Wykoff 1990</a>)</span>, whereas the coefficients for the height increment component of the model were originally developed using 10-year height measurements from a separate set of felled trees <span class="citation" data-cites="stage1975">(<a href="#ref-stage1975" role="doc-biblioref">Stage 1975</a>)</span>.</p>
+<div id="fig-fvs-diagram" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-fvs-diagram-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="fvs_diagram.jpg" class="img-fluid figure-img">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-fvs-diagram-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;1: FVS-IE core large tree growth model. From top to bottom: white boxes with solid outlines are input variables; black ovals are key model components estimated using input variables; white boxes with dashed outlines are optional keywords for calibration; and solid grey boxes are model outputs. Solid black arrows represent model processes that are always carried out. Calibration keywords (white boxes with dashed outlines) are numbered by the order in which they are applied. Dashed black arrows represent optional model processes. <span class="math inline">\(D_t, \, H_t\)</span> = diameter at time <span class="math inline">\(t\)</span> and height at time <span class="math inline">\(t\)</span>, respectively, <span class="math inline">\(\widehat G_D\)</span> = FVS-predicted diameter growth, <span class="math inline">\(\widehat G_H\)</span> = FVS-predicted height growth, SF = scale factor, CCF = crown competition factor, BAL = basal area in larger trees, DDS = squared inside-bark diameter increment <span class="math inline">\((D_\text{inside bark} + \widehat G_D)^2 – D_\text{inside bark}^2)\)</span>.
+</figcaption>
+</figure>
+</div>
+<p>The large tree growth model relies on the assumption that tree growth is relatively homogeneous across stands that have the same site variables (elevation, slope, aspect, habitat type, and location code; <a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>). However, FVS-IE has limited resolution in habitat type and location code because it is a regional growth model. Therefore, stands with identical site variables may still have meaningful variation in tree growth rates due to small-scale environmental factors (e.g., local climate). The violation of the assumption of homogeneous growth across local climates suggests that FVS-IE may inaccurately predict tree growth, volume, and carbon at local scales. The extent of this inaccuracy and methods for correcting for prediction errors are not well-known, yet they must be understood to ensure that FVS-IE can be a reliable tool for management.</p>
+<p>Local calibration, or adjusting model outputs using a multiplicative or additive factor, can be an effective method for improving FVS accuracy <span class="citation" data-cites="cankaya2025 swann2025 cawrse2010 diaz2018">(<a href="#ref-cankaya2025" role="doc-biblioref">Cankaya and Radtke 2025</a>; <a href="#ref-swann2025" role="doc-biblioref">Swann, Fried, and Gray 2025</a>; <a href="#ref-cawrse2010" role="doc-biblioref">Cawrse et al. 2010</a>; <a href="#ref-diaz2018" role="doc-biblioref">Diaz et al. 2018</a>)</span>. Presumably, this strategy is effective because it addresses the violation of the first assumption of homogeneity discussed above. The FVS-IE model architecture provides multiple ways to calibrate the large tree diameter growth model, including a built-in “self-calibration” routine that uses growth data provided with the input tree list.</p>
+<p>Mechanisms for calibration (numbered boxes with dashed borders in <a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>) differ by when in the projection cycle they are applied, what they are applied to, and how they attenuate. Calibration can take place before diameter/height increment projection (numbered boxes 1-5, including self-calibration in <a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>) or after projections are made (numbered boxes 6 and 7; <a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>). In the former case, adjustments to diameter growth rates affect projected height growth (<a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>, see arrow labeled “10-year <span class="math inline">\(\widehat G_D\)</span>”). In the latter case, adjustments to diameter do not affect height growth. The READCORD and READCORH keywords are applied before self-calibration (boxes 1, 4, and 2 respectively, in <a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>), whereas BAIMULT and HTGMULT (boxes 3 and 5 in <a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>) are applied after self-calibration. These methods of calibration also differ in whether they are additive or multiplicative. Self-calibrated scale factors, READCORD, and READCORH all represent intercepts added on the log-scale (boxes 1, 2, and 4 in <a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>). In contrast, BAIMULT and HTGMULT function by multiplying untransformed growth estimates (boxes 3 and 5 in <a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>). Calibration after projections are made must be done by multiplying untransformed estimates (boxes 6 and 7 in <a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>). Unlike user-supplied scale factors (boxes 1, 3, 4, 5, 6, and 7 in <a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>), self-calibrated scale factors (box 2 in <a href="#fig-fvs-diagram" class="quarto-xref">Figure&nbsp;1</a>) gradually attenuate over the course of the simulation, causing long-term projections to approach model defaults. Because adding an intercept on the log-scale is equivalent to multiplying on the untransformed scale, I refer to both intercepts and growth multipliers as “scale factors.” For a more in-depth discussion of which scale factors to use when, see <span class="citation" data-cites="hamilton1994">Hamilton (<a href="#ref-hamilton1994" role="doc-biblioref">1994</a>)</span>.</p>
+<p>After selecting the appropriate keyword(s) to use to adjust tree growth to reflect local conditions, the scale factors themselves must be estimated. This requires high-quality, consistently collected tree measurement data. Yet, tree growth data can be costly or difficult to obtain. Thus, the publicly available Forest Inventory and Analysis (FIA) national forest inventory (NFI) program is a promising source of calibration data. NFI data consist of tree measurements collected via a standard protocol every 5-10 years from field plots located across the country. There is one field plot for every 24 km2 of forest, and each plot consists of a cluster of four 169m2 subplots <span class="citation" data-cites="sampling2022a">(<a href="#ref-sampling2022a" role="doc-biblioref"><span>“Sampling and Estimation Documentation for the Enhanced Forest Inventory and Analysis Program”</span> 2022</a>)</span>. Due to this sampling design, FIA data are plentiful and spread across a wide variety of forest types, management histories, and environments.</p>
+<p>In this project, I use FIA data to understand how local variation affects FVS prediction accuracy. (WILL FLESH THIS OUT WHEN THERE ARE MORE FINDINGS).</p>
+</section>
+<section id="methods" class="level2">
+<h2 class="anchored" data-anchor-id="methods">Methods</h2>
+<p>Code in development is available on my GitHub: https://github.com/sprachan/fvs-code. I use an R package that I am currently developing (<code>rFVSIEtools</code>). Because this package is under development, the repo is private; however, I can give access if desired.</p>
+<section id="data-and-study-species" class="level3">
+<h3 class="anchored" data-anchor-id="data-and-study-species">Data and Study Species</h3>
+<p>To evaluate how FVS-IE predictions deviate from remeasurements, I used publicly available tree remeasurement data from Forest Inventory and Analysis (FIA) plots in western Montana and northern Idaho. To avoid confounding effects of plot history when investigating deviation due to local-scale variation, I only retained data from plots that had no recent disturbance or treatment history. I limited this analysis to Douglas-fir (Pseudotsuga menziesii) and western larch (Larix occidentalis) growth because these are both common and commercially important species in the inland northwest. Both Douglas-fir and western larch are abundant in forests in the Northern Rockies, but the two species have different environmental specificity: Douglas-fir grows under a wider range of climate conditions <span class="citation" data-cites="psmesilvics">(<a href="#ref-psmesilvics" role="doc-biblioref">Hermann and Lavender 1990</a>)</span> than does western larch <span class="citation" data-cites="laocsilvics">(<a href="#ref-laocsilvics" role="doc-biblioref">Schmidt and Shearer 1990</a>)</span>. This difference in environmental specificity may provide some insight into how climate variation affects the variation in FVS prediction accuracy. If climate is a main driver of local-scale prediction bias, then I expect that scale factors will be more variable for Douglas-fir than western larch because Douglas-fir inhabits a broader range of climates in the inland northwest.</p>
+<p>To investigate how local-scale climate variables contribute to deviation from base FVS predictions, I used a gridded water balance model created by the National Park Service <span class="citation" data-cites="tercek2021 tercek2023 tercek">(<a href="#ref-tercek2021" role="doc-biblioref">Tercek, Thoma, Gross, Sherrill, Kagone, et al. 2021</a>; <a href="#ref-tercek2023" role="doc-biblioref">Tercek, Gross, and Thoma 2023</a>; <a href="#ref-tercek" role="doc-biblioref">Tercek, Thoma, Gross, and Sherrill 2021</a>)</span>. This dataset includes annual and seasonal mean water balance parameters (actual evapotranspiration, potential evapotranspiration, and deficit) from 1981-2019 at 1km resolution. For this analysis, I used climatic water deficit from 1981-2019 as a climate predictor because it integrates a site’s potential evapotranspiration relative to actual demand, serving as an indicator of drought stress. I used average water balance data over this time frame because trees are long-lived, so their growth integrates water balance parameters across long periods of time. Because FIA plot locations are fuzzed within 0.8km on public lands and up to 1.6km on private lands, I calculated average climatic water deficit within 0.8km buffers around FIA plot locations on public lands and 1.6km buffers around FIA plot locations on private lands.</p>
+</section>
+<section id="fvs-simulations" class="level3">
+<h3 class="anchored" data-anchor-id="fvs-simulations">FVS Simulations</h3>
+<p>To generate uncalibrated FVS predictions, I ran FVS with self-calibration turned off. I simulated growth only for alive trees, turned tripling off, and set the random seed to 2025 to ensure reproducibility.</p>
+</section>
+<section id="modeling-scale-factors" class="level3">
+<h3 class="anchored" data-anchor-id="modeling-scale-factors">Modeling Scale Factors</h3>
+<p>Methods for calculating scale factors vary across the literature. FVS-IE uses median prediction error for self-calibration <span class="citation" data-cites="dixon2002">(<a href="#ref-dixon2002" role="doc-biblioref">Dixon 2002</a>)</span>. Regression-based calibration has proven effective for the Southern variant of FVS <span class="citation" data-cites="cankaya2025">(<a href="#ref-cankaya2025" role="doc-biblioref">Cankaya and Radtke 2025</a>)</span> and the Central Rockies variant of FVS <span class="citation" data-cites="ex2014">(<a href="#ref-ex2014" role="doc-biblioref">Ex and Smith 2014</a>)</span>. However, previous work has used linear regression exclusively to calculate scale factors by modeling some form of:</p>
+<p><span class="math display">\[ \widehat D = \beta_0 + \beta_1 D \]</span></p>
+<p>Where <span class="math inline">\(\widehat D\)</span> is the projected diameter after a certain period of time (i.e., the default FVS projection cycle length), <span class="math inline">\(D\)</span> is the remeasured diameter, and <span class="math inline">\(\beta_i\)</span> are regression coefficients. While this approach is effective, it fails leverage the ability of regression to quantify how plot and tree characteristics contribute to the magnitude and direction of calibration required. In contrast, I use regression to quantify how local-scale variation drives prediction error in FVS and how we may address this shortcoming.</p>
+<p>To understand local-scale variables that contribute to deviation from “base” FVS-IE predictions and investigate spatial structure in deviation, I used a Bayesian hierarchical modeling (BHM) framework to model remeasured diameter growth as a function of the product of a (plot- and tree-specific) scale factor and the FVS projected diameter growth. The BHM approach formalizes the nested tree-within-plot structure, allowing each scale factor estimate to draw on information from the broader plot.</p>
+<p>The hierarchical model for diameter growth for tree <span class="math inline">\(i\)</span> in plot <span class="math inline">\(j\)</span> (notated <span class="math inline">\(G_{ij}\)</span>) is illustrated in the directed acyclic graph (DAG) below, where <span class="math inline">\(\widehat G_{ij}\)</span> is FVS-projected diameter growth for tree <span class="math inline">\(i\)</span> in plot <span class="math inline">\(j\)</span>, <span class="math inline">\(D_{0, \, ij}\)</span> is the tree’s initial DBH, <span class="math inline">\(s\)</span> is the tree species, <span class="math inline">\(\alpha_j\)</span> is a plot-specific intercept, <span class="math inline">\(E_j\)</span> is standardized average water deficit for plot <span class="math inline">\(j\)</span>, <span class="math inline">\(\rho_j\)</span> is the standardized initial density (in trees per hectare) for plot <span class="math inline">\(j\)</span>, <span class="math inline">\(\beta_0\)</span> is the plot adjustment when <span class="math inline">\(E_j = \overline E\)</span> and <span class="math inline">\(\rho_j = \overline \rho\)</span> and <span class="math inline">\(\Sigma\)</span> is covariance, <span class="math inline">\(\phi\)</span> is a distance penalty, <span class="math inline">\(d\)</span> is distance, and each <span class="math inline">\(\sigma\)</span> denotes a variance. The response variable, <span class="math inline">\(G_{ij}\)</span>, is in a circle, square boxes indicate parameters, and hexagons indicate predictors.</p>
+<div class="cell" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class="figure"><p></p>
+<div>
+<pre class="mermaid mermaid-js">flowchart BT
+
+ B["$$\beta_{i,j}$$"] &amp; D{{"$$\widehat G_{ij}$$"}} &amp; C["$$\sigma_1$$"] --&gt; A(("$$G_{ij}$$"))
+
+F["$$\beta_{D_0}$$"] &amp; G{{"$$D_{0, \,ij}$$"}} &amp; E["$$\alpha_j$$"] &amp; H{{"$$s_{ij}$$"}} &amp; T["$$\beta_s$$"]--&gt; B
+
+I["$$\beta_E$$"] &amp; J{{"$$E_j$$"}} &amp; K["$$\beta_{\rho}$$"] &amp; L{{"$$\rho_j$$"}} &amp; S["$$\beta_0$$"]--&gt; E
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<p>Mathematically, I will specify the model as:</p>
+<p><span id="eq-dg-model"><span class="math display">\[
+G_{ij} \sim \log \mathcal N \left(\mu = \beta_{ij}\widehat G_{ij}, \sigma_1^2\right)
+\tag{1}\]</span></span></p>
+<p><span id="eq-sf-model"><span class="math display">\[
+\beta_{ij} = \exp(\alpha_j + \beta_{D_0} \cdot D_{0,\, ij} + \beta_s s)
+\tag{2}\]</span></span></p>
+<p><span id="eq-plot-model"><span class="math display">\[
+\alpha_j \sim \mathcal N(\mu_{xy} = \beta_0+\beta_E \cdot E_j +  \beta_\rho \cdot \rho_j, 5)
+\tag{3}\]</span></span></p>
+<p>Let us consider each level of the model in turn.</p>
+<p>At the first level (<a href="#eq-dg-model" class="quarto-xref">Equation&nbsp;1</a>), I modeled the diameter growth of a single tree <span class="math inline">\(i\)</span> in a plot <span class="math inline">\(j\)</span> as a random variable that follows a lognormal distribution (for other examples of authors using the lognormal to model DBH, see <span class="citation" data-cites="clark2007">Clark et al. (<a href="#ref-clark2007" role="doc-biblioref">2007</a>)</span> and <span class="citation" data-cites="ruger2012">Rüger et al. (<a href="#ref-ruger2012" role="doc-biblioref">2012</a>)</span>). However, FIA crews only remeasure diameter to the nearest 0.1”. Thus, if a tree grew less than 0.05” between measurements, it will be recorded with diameter growth 0. Thus, I calculated the likelihood for recorded diameter growth = 0 to be the lognormal CDF (not pdf) from 0 to 0.05. The lognormal takes two parameters; let <span class="math inline">\(\alpha\)</span> denote the location parameter and <span class="math inline">\(\gamma\)</span> denote the scale parameter. Note that <span class="math inline">\(\alpha\)</span> and <span class="math inline">\(\gamma\)</span> are the expectation and standard deviation, respectively, of <span class="math inline">\(\ln G_D\)</span>. Then, by moment matching, we can solve for these parameters in terms of the desired mean and standard deviation (<span class="math inline">\(\mu\)</span> and <span class="math inline">\(\sigma_1\)</span>, above):</p>
+<span class="math display">\[\begin{align*}
+\alpha &amp;= \ln\left(\frac{\mu^2}{\sqrt{\mu^2+\sigma_1^2}}\right) \\
+\gamma &amp;= \ln\left(1+\frac{\sigma_1^2}{\mu^2}\right)
+\end{align*}\]</span>
+<p>This model structures remeasured diameter growth for tree <span class="math inline">\(i\)</span> in plot <span class="math inline">\(j\)</span> such that the remeasured value is, on average, the value <span class="math inline">\(\beta_{ij}\widehat G_{ij}\)</span> where <span class="math inline">\(\widehat G_{ij}\)</span> is the FVS-predicted diameter growth.</p>
+<p>In the next level of the model (<a href="#eq-sf-model" class="quarto-xref">Equation&nbsp;2</a>), I modeled the scale factor deterministically as the sum of a plot-level effect (<span class="math inline">\(\alpha_j\)</span>), a species effect (<span class="math inline">\(\beta_s s\)</span>), and the effect of initial tree DBH (<span class="math inline">\(\beta_{D_0} \cdot D_{0, \, ij}\)</span>). I exponentiate dthis linear combination because the scale factor must be strictly positive, though I may consider alternative transformations (e.g., square, absolute value) depending on model performance.</p>
+<p>At the next level, the baseline adjustment due to plot effects, <span class="math inline">\(\alpha_j\)</span>, is modeled as a multivariate normal distribution with a spatially structured covariance matrix as described in <a href="#eq-plot-model" class="quarto-xref">Equation&nbsp;3</a>. Specifically, the plot-level effect <span class="math inline">\(\alpha_j\)</span> has the average value <span class="math inline">\(\beta_0 + \beta_E \cdot E_j +  \beta_\rho \cdot \rho_j\)</span>., where <span class="math inline">\(E_j\)</span> is the plot-level average annual water deficit and <span class="math inline">\(\rho_j\)</span> is a measure of plot density (e.g., 100s of trees per hectare).</p>
+<p>In summary, we are interested in the posterior <span class="math inline">\(\mathbb P(\beta_{ij}, \sigma_1, \beta_{D_0}, \alpha_j, \beta_E, \beta_\rho, \beta_0|G_{i,j})\)</span>. By Bayes theorem and conditional independence, we have:</p>
+<p><span id="eq-sf-posterior"><span class="math display">\[
+\begin{split}
+\mathbb P(\beta_{ij}, \sigma_1, \beta_{D_0}, \alpha_j, \beta_E, \beta_\rho, \beta_s, \beta_0|G_{i,j}) \propto &amp; \mathbb P(G_{ij}|B_{ij}, \sigma_1) \mathbb P(\beta_{ij}|\alpha_j, \beta_{D_0}, \beta_s) \cdot\\ &amp; \mathbb P(\alpha_j|\beta_E, \beta_\rho, \beta_0) \cdot \\ &amp;\mathbb P(\sigma_1)\mathbb P(\beta_{D_0})\mathbb P(\beta_s)\mathbb P(\beta_E)\mathbb P(\beta_\rho)\mathbb P(\beta_0)
+\end{split}
+\tag{4}\]</span></span></p>
+<p>Priors:</p>
+<p>Note that the prior distributions for <span class="math inline">\(\beta_{i,j}\)</span> and <span class="math inline">\(\alpha_j\)</span> are given as <a href="#eq-sf-model" class="quarto-xref">Equation&nbsp;2</a> and <a href="#eq-plot-model" class="quarto-xref">Equation&nbsp;3</a>, respectively.</p>
+<ul>
+<li><span class="math inline">\(\beta_{D_0}, \beta_\rho, \beta_s \sim \mathcal N(0, 2)\)</span> because I expect the effects to be relatively small but I am unsure about the sign, and these coefficients can take on any value in <span class="math inline">\(\mathbb R\)</span>.</li>
+<li><span class="math inline">\(\sigma_1 \sim \text{half-Cauchy}(0, 5)\)</span>. The half-Cauchy is a lot like the half normal, but it has heavier tails and therefore allows more extreme values.</li>
+</ul>
+</section>
+<section id="to-do-still" class="level3">
+<h3 class="anchored" data-anchor-id="to-do-still">TO DO STILL</h3>
+<p>I will use posterior predictive checks to assess model fit. I will also visually compare posterior distributions to prior distributions to assess how informative the data were relative to the prior. I am working on fitting the third level of the model (including density and deficit as predictors). I got an initial version up and running, but I need more time to rerun with standardized predictors, visualize, and think about the results.</p>
+<ul>
+<li>Add spatial level by having <span class="math inline">\(\alpha_j\)</span> be multi normal with spatial structured covariance matrix?</li>
+</ul>
+</section>
+</section>
+<section id="results-and-some-discussion" class="level2">
+<h2 class="anchored" data-anchor-id="results-and-some-discussion">Results and some Discussion</h2>
+<p>I currently have had success running the first and second level model (scale factor only, then scale factor with randomly drawn plot effect, species effect, and size effect). These are the preliminary results I present here. Corresponding Stan Code is before the references.</p>
+<p>For these preliminary results, I compared scaled and unscaled predictions using posterior mean <span class="math inline">\(\beta_{i,j}\)</span> values. This was simple to extract from the first model (I took the mean of the posterior draws for <span class="math inline">\(\beta\)</span>). I used a similar process for the second level, but it was a bit more involved (posterior mean <span class="math inline">\(\overline \beta_{ij} = \text{exp}(\overline \alpha_j+\overline \beta_{D_0}D_{0,i}+\overline \beta_ss_i)\)</span>).</p>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="final_project_files/figure-html/unnamed-chunk-2-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>In the above plot, the dashed black line is the 1:1 line. Note the banding pattern on the x-axis is due to the fact that FIA measurements are rounded to the nearest 0.1”, whereas FVS predictions are truly continuous. If FVS was unbiased, we would expect points to all fall roughly along the 1:1 line, with noise. Clearly, this is not the case. Moreover, there appears to be a pattern in initial diameter, though this is a bit tricky to parse. Smaller tree growth (darker colors), which make up the bulk of the data, is generally over predicted even more than larger tree growth (lighter colors; i.e., darker points lie further above the 1:1 line than do lighter points). The absolute largest trees appear to have under-predicted diameter growth (very light points under the 1:1 line), though this is a bit difficult to see.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="final_project_files/figure-html/unnamed-chunk-3-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="final_project_files/figure-html/unnamed-chunk-3-2.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>As before, the dashed black line is the 1:1 line. The first-level model, where I use a single scale factor to adjust all predictions, changes the dynamics somewhat. Rather than largely overpredicting, the scaled growth predictions are roughly equally over and under what they should be (i.e., density of points is roughly equal above and below the 1:1 line). We haven’t gotten rid of the problems by initial DBH (smaller trees are still over predicted more than larger trees) and scaled predictions are way below what they should be for some trees (points on the farthest right of the plot).</p>
+<p>The second-level model is a different story. Now, we have much better alignment with the 1:1 line, though we are still underpredicting a fair amount of trees (far right below the 1:1 line). It’s hard to tell what is going on with initial DBH because of the sheer quantity of data. At first glance, it appears that there is more random scatter of initial DBH values about the 1:1 line, which is what we would expect from a model that is not biased WRT initial DBH. However, it looks like we may be over-predicting larger trees now. Let’s look more closely:</p>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="final_project_files/figure-html/unnamed-chunk-4-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Indeed, we are now somewhat overpredicting DBH growth for larger trees. Because of how FVS keywords work, I was considering fitting <span class="math inline">\(\beta_{D_0}\)</span> for categorical rather than continuous <span class="math inline">\(D_0\)</span>. However, I don’t want to lose the resolution of the data I get from using continuous <span class="math inline">\(D_0\)</span>. Instead, I should perhaps include a squared term; it looks like my current formulation, where the scale factor is log-linear WRT initial diameter, accurately reflects the actual relationship in the data. A quadratic term would allow the (log) scale factor to increase with initial DBH up to a certain threshold, then it begins to decrease again. More exploration is warranted.</p>
+<p>A question I have for you is: given that FIA data are rounded, should I consider including a model for rounding? That is, should I use the CDF to calculate the likelihood for every observation? For example, the likelihood for a FIA diameter growth value of 0.1 would be the lognormal CDF(<span class="math inline">\([0.05, 0.15)|\alpha, \gamma\)</span>) and the likelihood for a FIA diameter growth value of 0.2 would be <span class="math inline">\(\log \mathcal N \text{CDF}([0.15,0.25))\)</span>, where <span class="math inline">\(\alpha, \gamma\)</span> are the log normal parameters. Would this be overly complicated? Everybody uses rounded data in practice because instruments have finite precision, and I can’t think of any papers I’ve read where authors explicitly accounted for rounding. So should I care?</p>
+</section>
+<section id="stan-code" class="level2">
+<h2 class="anchored" data-anchor-id="stan-code">Stan Code</h2>
+<p>First-level model:</p>
+<pre><code>
+functions{
+  real lognormal_zeroes_lpdf(vector y, vector location, vector scale){
+    vector [num_elements(y)] llk;
+    for(i in 1:num_elements(y)){
+        // Recorded DG of 0 could actually be from 0" to 0.05".
+        // Thus, we want to give the cumulative probability that DG is in 
+        // [0, 0.05] 
+      if (y[i] == 0) 
+        // recorded DG = 0 means actual could be anywhere from 0-0.05.
+        llk[i] = lognormal_lcdf(0.05|location[i], scale[i]); 
+      else
+        llk[i] = lognormal_lpdf(y[i]|location[i], scale[i]);
+    }
+    return sum(llk);
+}
+}
+
+data {
+  int&lt;lower=0&gt; N;
+  vector[N] dg_fvs;
+  vector[N] dg_fia;
+}
+
+
+parameters {
+  real&lt;lower=0&gt; beta;
+  real&lt;lower=0&gt; sigma;
+}
+
+transformed parameters{
+  // mean for each observation depends on dg_fvs
+  vector&lt;lower = 0&gt;[N] mu = beta*dg_fvs;
+  vector[N] location = log((pow(mu, 2))./sqrt(pow(mu, 2)+pow(sigma, 2)));
+  vector[N] scale = log(1+pow(sigma, 2)./pow(mu, 2));
+}
+
+model {
+  beta ~ gamma(2, 1);
+  sigma ~ normal(0, 2);
+  dg_fia ~ lognormal_zeroes(location, scale);
+}</code></pre>
+<p>Second level model:</p>
+<pre><code>
+functions{
+  real lognormal_zeroes_lpdf(vector y, vector location, vector scale){
+    vector [num_elements(y)] llk;
+    for(i in 1:num_elements(y)){
+      if (y[i] == 0) 
+        // recorded DG = 0 means actual could be anywhere from 0-0.05.
+        llk[i] = lognormal_lpdf(0.05|location[i], scale[i]); 
+      else
+        llk[i] = lognormal_lpdf(y[i]|location[i], scale[i]);
+    }
+    return sum(llk);
+}
+}
+
+data {
+  int&lt;lower=0&gt; N;
+  int&lt;lower=0&gt; N_plots;
+  int&lt;lower=1&gt; N_species;
+  vector[N] dg_fvs;
+  vector[N] dg_fia;
+  vector[N] tree_size;
+  matrix&lt;lower=0&gt;[N, N_species] species;
+  array[N] int plot_id;
+}
+
+
+parameters {
+  real beta_size;
+  vector[N_species] beta_species;
+  real&lt;lower=0&gt; sigma;
+  vector[N_plots] alpha_plot;
+}
+
+transformed parameters{
+  vector&lt;lower=0&gt;[N] mu; 
+  mu = exp(alpha_plot[plot_id]+beta_size.*tree_size+species*beta_species).*dg_fvs;
+
+  vector[N] location = log((pow(mu, 2))./sqrt(pow(mu, 2)+pow(sigma, 2)));
+  vector[N] scale = log(1+pow(sigma, 2)./pow(mu, 2));
+}
+
+model {
+  beta_size ~ normal(0, 2); // draw one value total
+  sigma ~ cauchy(0, 2); // draw one value total
+  alpha_plot ~ normal(0, 2); // draw one value PER PLOT
+  beta_species ~ normal(0, 2);
+
+  dg_fia ~ lognormal_zeroes(location, scale);
+}</code></pre>
+</section>
+<section id="references" class="level2 unnumbered">
+
+
+</section>
+
+<div id="quarto-appendix" class="default"><section class="quarto-appendix-contents" role="doc-bibliography" id="quarto-bibliography"><h2 class="anchored quarto-appendix-heading">References</h2><div id="refs" class="references csl-bib-body hanging-indent" data-entry-spacing="0" role="list">
+<div id="ref-arbcomp2013" class="csl-entry" role="listitem">
+<span>“ARB Compliance Offset Program: U.s. Forest Offset Protocol Frequently Asked Questions.”</span> 2013. <a href="https://ww2.arb.ca.gov/sites/default/files/cap-and-trade/protocols/usforest/resources/faq_102913_post.pdf">https://ww2.arb.ca.gov/sites/default/files/cap-and-trade/protocols/usforest/resources/faq_102913_post.pdf</a>.
+</div>
+<div id="ref-cankaya2025" class="csl-entry" role="listitem">
+Cankaya, Ergin C, and Philip J. Radtke. 2025. <span>“Evaluating Local Calibration Methods for Improving Diameter Growth Predictions in the Southern Variant, Forest Vegetation Simulator (FVS-Sn).”</span> <em>Forest Science</em>.
+</div>
+<div id="ref-cawrse2010" class="csl-entry" role="listitem">
+Cawrse, Dave, Chad Keyser, Tara Keyser, Andrew Sanchez Meador, Erin Smith-Mateja, and Mike Van Dyck. 2010. <span>“Forest Vegetation Simulator Calibration Protocols.”</span> Fort Collins, CO.
+</div>
+<div id="ref-clark2007" class="csl-entry" role="listitem">
+Clark, James S., Michael Wolosin, Michael Dietze, Inés IbáÑez, Shannon LaDeau, Miranda Welsh, and Brian Kloeppel. 2007. <span>“Tree Growth Inference and Prediction from Diameter Censuses and Ring Widths.”</span> <em>Ecological Applications</em> 17 (7): 1942–53. <a href="https://doi.org/10.1890/06-1039.1">https://doi.org/10.1890/06-1039.1</a>.
+</div>
+<div id="ref-crookston2005" class="csl-entry" role="listitem">
+Crookston, Nicholas L., and Gary E. Dixon. 2005. <span>“The Forest Vegetation Simulator: A Review of Its Structure, Content, and Applications.”</span> <em>Computers and Electronics in Agriculture</em> 49 (1): 60–80. <a href="https://doi.org/10.1016/j.compag.2005.02.003">https://doi.org/10.1016/j.compag.2005.02.003</a>.
+</div>
+<div id="ref-diaz2018" class="csl-entry" role="listitem">
+Diaz, David D., Sara Loreno, Gregory J. Ettl, and Brent Davies. 2018. <span>“Tradeoffs in Timber, Carbon, and Cash Flow Under Alternative Management Systems for Douglas-Fir in the Pacific Northwest.”</span> <em>Forests</em> 9 (8): 447. <a href="https://doi.org/10.3390/f9080447">https://doi.org/10.3390/f9080447</a>.
+</div>
+<div id="ref-dixon2002" class="csl-entry" role="listitem">
+Dixon, Gary E. 2002. <span>“Essential FVS: A User’s Guide to the Forest Vegetation Simulator.”</span> Fort Collins, CO. <a href="https://www.fs.usda.gov/sites/default/files/forest-management/essential-fvs.pdf">https://www.fs.usda.gov/sites/default/files/forest-management/essential-fvs.pdf</a>.
+</div>
+<div id="ref-ex2014" class="csl-entry" role="listitem">
+Ex, Seth A., and Frederick W. Smith. 2014. <span>“Evaluating Forest Vegetation Simulator Performance for Trees in Multiaged Ponderosa Pine Stands, Black Hills, USA.”</span> <em>Forest Science</em> 60 (2): 214–21. <a href="https://doi.org/10.5849/forsci.12-054">https://doi.org/10.5849/forsci.12-054</a>.
+</div>
+<div id="ref-gorain2025" class="csl-entry" role="listitem">
+Gorain, Subrata, Suman Dutta, Sumana Balo, Ayushman Malakar, Malini Roy Choudhury, and Sumanta Das. 2025. <span>“Harnessing Green Wealth: A Two-Decade Global Assessment of Forest Carbon Sequestration and Credits and the Economic Implications of Sustainable Forest Management Practices.”</span> <em>Journal of Environmental Management</em> 393 (October): 126987. <a href="https://doi.org/10.1016/j.jenvman.2025.126987">https://doi.org/10.1016/j.jenvman.2025.126987</a>.
+</div>
+<div id="ref-hamilton1994" class="csl-entry" role="listitem">
+Hamilton, David A. 1994. <span>“Uses and Abuses of Multipliers in the Stand Prognosis Model.”</span> Ogden, UT. <a href="https://doi.org/10.2737/INT-GTR-310">https://doi.org/10.2737/INT-GTR-310</a>.
+</div>
+<div id="ref-psmesilvics" class="csl-entry" role="listitem">
+Hermann, Richard K., and Denis P. Lavender. 1990. <span>“Douglas-Fir.”</span> In. Vol. 1. United States Department of Agriculture, Forest Service. <a href="https://research.fs.usda.gov/silvics/douglas-fir">https://research.fs.usda.gov/silvics/douglas-fir</a>.
+</div>
+<div id="ref-joo2025" class="csl-entry" role="listitem">
+Joo, Sukhyun, Hailemariam Temesgen, Bryce Frank, Aaron R. Weiskittel, and Don Reimer. 2025. <span>“Roles of Growth and Yield Models for Informed Forest Management Decisions in the Pacific Northwest United States.”</span> <em>J. For.</em> 123 (5): 593–627. <a href="https://doi.org/10.1007/s44392-025-00041-0">https://doi.org/10.1007/s44392-025-00041-0</a>.
+</div>
+<div id="ref-marvin2023" class="csl-entry" role="listitem">
+Marvin, David C., Benjamin M. Sleeter, D. Richard Cameron, Erik Nelson, and Andrew J. Plantinga. 2023. <span>“Natural Climate Solutions Provide Robust Carbon Mitigation Capacity Under Future Climate Change Scenarios.”</span> <em>Scientific Reports</em> 13 (1): 19008. <a href="https://doi.org/10.1038/s41598-023-43118-6">https://doi.org/10.1038/s41598-023-43118-6</a>.
+</div>
+<div id="ref-munro2025" class="csl-entry" role="listitem">
+Munro, Holly L., Christopher W. Woodall, William R. L. Anderegg, Jeff W. Atkins, Colin M. Beier, Bronson P. Bullock, Kendall DeLyser, et al. 2025. <span>“Challenges and Strategic Recommendations for Enhancing Quantification and Projection of Forest Carbon Dynamics.”</span> <em>Journal of Forestry</em>, August. <a href="https://doi.org/10.1007/s44392-025-00048-7">https://doi.org/10.1007/s44392-025-00048-7</a>.
+</div>
+<div id="ref-ruger2012" class="csl-entry" role="listitem">
+Rüger, Nadja, Christian Wirth, S. Joseph Wright, and Richard Condit. 2012. <span>“Functional Traits Explain Light and Size Response of Growth Rates in Tropical Tree Species.”</span> <em>Ecology</em> 93 (12): 2626–36. <a href="https://doi.org/10.1890/12-0622.1">https://doi.org/10.1890/12-0622.1</a>.
+</div>
+<div id="ref-sampling2022a" class="csl-entry" role="listitem">
+<span>“Sampling and Estimation Documentation for the Enhanced Forest Inventory and Analysis Program.”</span> 2022. <a href="https://doi.org/10.2737/nrs-gtr-207">https://doi.org/10.2737/nrs-gtr-207</a>.
+</div>
+<div id="ref-laocsilvics" class="csl-entry" role="listitem">
+Schmidt, Wyman C., and Raymond C. Shearer. 1990. <span>“Western Larch.”</span> In. Vol. 1. United States Department of Agriculture, Forest Service. <a href="https://research.fs.usda.gov/silvics/western-larch">https://research.fs.usda.gov/silvics/western-larch</a>.
+</div>
+<div id="ref-smyth2014" class="csl-entry" role="listitem">
+Smyth, C. E., G. Stinson, E. Neilson, T. C. Lemprière, M. Hafer, G. J. Rampley, and W. A. Kurz. 2014. <span>“Quantifying the Biophysical Climate Change Mitigation Potential of Canada’s Forest Sector.”</span> <em>Biogeosciences</em> 11 (13): 3515–29. <a href="https://doi.org/10.5194/bg-11-3515-2014">https://doi.org/10.5194/bg-11-3515-2014</a>.
+</div>
+<div id="ref-stage1973" class="csl-entry" role="listitem">
+Stage, Albert R. 1973. <span>“Prognosis Model for Stand Development.”</span> Ogden, UT.
+</div>
+<div id="ref-stage1975" class="csl-entry" role="listitem">
+———. 1975. <span>“Prediction of Height Increment for Models of Forest Growth.”</span> Ogden, UT.
+</div>
+<div id="ref-swann2025" class="csl-entry" role="listitem">
+Swann, Daniel E. B., Jeremy S. Fried, and Andrew N. Gray. 2025. <span>“Evaluating Forest Vegetation Simulator (FVS) Calibration Options for Predicting Biomass Accumulation Across Diverse Oregon Landscapes.”</span> <em>Forest Ecology and Management</em> 594 (October): 122937. <a href="https://doi.org/10.1016/j.foreco.2025.122937">https://doi.org/10.1016/j.foreco.2025.122937</a>.
+</div>
+<div id="ref-tercek2023" class="csl-entry" role="listitem">
+Tercek, Michael T., John E. Gross, and David P. Thoma. 2023. <span>“Robust Projections and Consequences of an Expanding Bimodal Growing Season in the Western United States.”</span> <em>Ecosphere</em> 14 (5): e4530. <a href="https://doi.org/10.1002/ecs2.4530">https://doi.org/10.1002/ecs2.4530</a>.
+</div>
+<div id="ref-tercek" class="csl-entry" role="listitem">
+Tercek, Michael T., David P. Thoma, John E. Gross, and Kirk Sherrill. 2021. <span>“Gridded Water Balance Model.”</span>
+</div>
+<div id="ref-tercek2021" class="csl-entry" role="listitem">
+Tercek, Michael T., David Thoma, John E. Gross, Kirk Sherrill, Stefanie Kagone, and Gabriel Senay. 2021. <span>“Historical Changes in Plant Water Use and Need in the Continental United States.”</span> Edited by Angelina Martínez-Yrízar. <em>PLOS ONE</em> 16 (9): e0256586. <a href="https://doi.org/10.1371/journal.pone.0256586">https://doi.org/10.1371/journal.pone.0256586</a>.
+</div>
+<div id="ref-weiskittel2011" class="csl-entry" role="listitem">
+Weiskittel, Aaron R., David W. Hann, John A. Kershaw, and Jerome K. Vanclay. 2011. <span>“Forest Growth and Yield Modeling,”</span> August. <a href="https://doi.org/10.1002/9781119998518">https://doi.org/10.1002/9781119998518</a>.
+</div>
+<div id="ref-wykoff1990" class="csl-entry" role="listitem">
+Wykoff, William R. 1990. <span>“A Basal Area Increment Model for Individual Conifers in the Northern Rocky Mountains.”</span> <em>Forest Science</em> 36 (4): 1077–1104. <a href="https://doi.org/10.1093/forestscience/36.4.1077">https://doi.org/10.1093/forestscience/36.4.1077</a>.
+</div>
+</div></section></div></main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>
