@@ -10,8 +10,12 @@ html/
 *.bib
 *.csl
 *.xlsx
+*.key
+*.out
+*.tre
+*.trl
 fia_calib/labnotes/
-fia_calib/reports/
+fia_calib/reports/nafew2026/*.rda
 misc_code/
 fia_calib/scripts/superceded/
 fia_calib/data/raw_data/

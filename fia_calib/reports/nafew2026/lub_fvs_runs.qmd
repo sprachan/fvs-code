@@ -1,0 +1,215 @@
+---
+title: "NAFEW Lubrecht runs"
+format: html
+execute:
+  eval: false
+editor:
+  mode: source
+---
+
+## Global Setup
+
+Contained in the script, `run_globals.R`, run before each simulation and annotated here.
+
+```{r}
+#| eval: true
+library(here)
+library(rFVSIEtools)
+library(dplyr)
+library(readxl)
+```
+
+There are two tree datasets: Lubrecht tree data and scale factors calculated in `nafew_data_prep.qmd`.
+
+```{r}
+#| label: data-dir
+#| eval: true
+data_dir <- here('data', 'fvs_ready')
+```
+
+Lubrecht data are in Excel files, where the first sheet is the stand information and the second sheet is the tree list. Data from 2018 and 2023 are in separate sheets, so I read them in separately. I also filtered the 2018 data to only include alive trees $\geq$ 3" DBH because dead trees do not grow and FVS uses different sub-models to project large ($\geq$ 3" DBH) and small (\<3" DBH) trees; to limit the scope of the project, I only wished to assess the large tree sub-model.
+
+```{r}
+#| label: read-lub-data
+#| eval: true
+
+lub2018_stands <- read_xlsx(file.path(data_dir, 'FVS_Lubrecht_2018.xlsx'),
+                           sheet = 1) |>
+  rename(STAND_CN = STAND_ID) |>
+  #set_stand_cols() |>
+  mutate(STDORGCD = 0,
+         FVS_HAB = as.numeric(PV_CODE),
+         FOREST = 116,
+         STDIDENT = paste0(gsub('_', '', STAND_CN), ' ', 
+                           tolower(gsub('_', '', STAND_CN))))
+lub2018_trees <- read_xlsx(file.path(data_dir, 'FVS_Lubrecht_2018.xlsx'),
+                            sheet = 2) |>
+  rename(STAND_CN = STAND_ID) |>
+  mutate(CRRATIO = as.numeric(CRRATIO)) |>
+  set_tree_cols(map_habcode = FALSE, stand_info = lub2018_stands)
+
+lub2023_stands <- read_xlsx(file.path(data_dir, 'FVS_Lubrecht_2023.xlsx'),
+                           sheet = 1)
+lub2023_trees <- read_xlsx(file.path(data_dir, 'FVS_Lubrecht_2023.xlsx'),
+                            sheet = 2)
+```
+
+There are a total of `{r} nrow(lub2018_stands)` stands and `{r} nrow(lub2018_trees)` trees in the 2018 dataset. There are the same number of stands in 2023 (`{r} nrow(lub2023_stands)`), but `{r} nrow(lub2023_trees)`. There are unmatched records between the two years due to ingrowth, mortality, inability to relocate trees, etc. Because these unmatched records are not usable in determining FVS prediction accuracy, I filtered them out.
+
+First, I created a tree unique identifier (TUID) using the stand ID and the tag ID. Then, I selected TUIDs that appeared in both 2018 and 2023. I used this set of matched TUIDs to filter each dataset using a left join (keep all the matched TUIDs, discard the rest).
+
+```{r}
+#| eval: true
+lub2018_trees$TUID <- paste(lub2018_trees$STAND_CN, lub2018_trees$TAG_ID, 
+                            sep = '_')
+lub2023_trees$TUID <- paste(lub2023_trees$STAND_ID, lub2023_trees$TAG_ID,
+                             sep = '_')
+
+matched_TUIDs <- inner_join(lub2018_trees['TUID'], lub2023_trees['TUID']) 
+
+lub2018_trees <- left_join(matched_TUIDs, lub2018_trees)
+lub2023_trees <- left_join(matched_TUIDs, lub2023_trees)
+```
+
+Now both 2018 and 2023 datasets have `{r} nrow(lub2023_trees)` tree records.
+
+I saved READCORDs to .rds files, so they load easily:
+
+```{r}
+#| eval: false
+habtype_readcord <- readRDS(here('data', 'sim_outputs', 'nafew_sfs',
+                                 'habtype_READCORD.rds'))
+habeco_readcord <- readRDS(here('data', 'sim_outputs', 'nafew_sfs',
+                                 'habeco_READCORD.rds'))
+ecosec_readcord <- readRDS(here('data', 'sim_outputs', 'nafew_sfs',
+                                'ecosec_READCORD.rds'))
+```
+
+Finally, these are shared across all runs as well.
+
+```{r}
+#| eval: false
+fvs_bin <- 'C:/FVS/FVSSoftware/FVSbin'
+carb <- paste0('\nFMIN\n',
+               'CARBREPT',
+               '\n',
+               'END\n')
+```
+
+## Uncalibrated Lubrecht Run
+
+First, I ran Lubrecht plots with no calibration to provide a baseline estimate for FVS diameter increment prediction error.
+
+```{r}
+#| eval: false
+source(here('reports', 'nafew2026', 'uc_sim.R'))
+
+```
+
+Then I just got the carbon and tree data, removing the large lists.
+
+```{r}
+#| eval: true
+
+load(here('reports', 'nafew2026', 'uc_sim.rda'))
+```
+
+## Self-Calibration
+
+```{r}
+#| eval: false
+source(here('reports', 'nafew2026', 'selfcalib_sim.R'))
+```
+
+```{r}
+#| eval: true
+load(here('reports', 'nafew2026', 'selfcalib_sim.rda'))
+```
+
+## Ecosection calibration
+
+Then, I ran Lubrecht stands through FVS using the scale factors calculated from FIA plots in the same ecosection as Lubrecht.
+
+```{r}
+#| eval: false
+source(here('reports', 'nafew2026', 'ecosec_sim.R'))
+```
+
+Just as before, I'll collect the carbon information and the trees into one dataframe each and remove the large lists:
+
+```{r}
+#| eval: true
+
+load(here('reports', 'nafew2026', 'ecosec_sim.rda'))
+```
+
+## Habitat type calibration
+
+This is a little different from the previous because each stand may have a different scale factor.
+
+```{r}
+#| eval: false
+
+source(here('reports', 'nafew2026', 'habtype_sim.R'))
+```
+
+```{r}
+#| eval: true
+
+load(here('reports', 'nafew2026', 'habtype_sim.rda'))
+```
+
+## Habitat type + ecosection
+
+Finally, I ran FVS with scale factors calculated from FIA plots that matched both geographically and ecologically:
+
+```{r}
+#| eval: false
+source(here('reports', 'nafew2026', 'ecosec_sim.R'))
+```
+
+```{r}
+#| eval: true
+
+load(here('reports', 'nafew2026', 'habeco_sim.rda'))
+```
+
+## Process data for analysis
+
+The next step was to combine the run dataframes into one big dataframe for analysis and process the self-calibration scale factors.
+
+### Combine runs
+
+```{r}
+#| eval: true
+all_trees <- bind_rows(none = uc_trees,
+                       self = selfcalib_trees,
+                       ecosection = ecosec_trees,
+                       habitat_type = habtype_trees,
+                       habitat_ecosection = habeco_trees,
+                       .id = 'calibration')
+
+all_carbon <- bind_rows(none = uc_carb,
+                       self = selfcalib_carb,
+                       ecosection = ecosec_carb,
+                       habitat_type = habtype_carb,
+                       habitat_ecosection = habeco_carb,
+                       .id = 'calibration')
+
+save(all_trees, file = here('reports', 'nafew2026', 'all_trees.rda'))
+save(all_carbon, file = here('reports', 'nafew2026', 'all_carbon.rda'))
+```
+
+### Self-calibration scale factors
+
+```{r}
+#| eval: true
+sc_readcord <- selfcalib_calib_stats |> 
+  filter(TreeSize == 'LG') |>
+  select(id = StandID, species = SpeciesFVSnum, scale_factor = ReadCorMult) |>
+  mutate(STDIDENT = paste0(id, ' ', tolower(id))) |>
+  left_join(lub2018_stands[c('STDIDENT', 'PV_CODE')]) |>
+  select(-id, -STDIDENT)
+
+save(sc_readcord, file = here('reports', 'nafew2026', 'selfcalib_readcord.rda'))
+```

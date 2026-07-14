@@ -1,0 +1,96 @@
+Habitat Code,Abbreviation,Habitat Type Name,Original Habitat Type
+10,SCREE,Scree,130
+100,PIPO,Ponderosa pine series,130
+110,PIPO/AND,Ponderosa pine/bluestem,130
+130,PIPO/AGSP,Ponderosa pine/bluebunch wheatgrass,130
+140,PIPO/FEID,Ponderosa pine/Idaho fescue,130
+160,PIPO/PUTR,Ponderosa pine/bitterbrush,170
+170,PIPO/SYAL,Ponderosa pine/Common snowberry,170
+180,PIPO/PRVI,Ponderosa pine/chokecherry,170
+190,PIPO/PHMA,Ponderosa pine/ninebark,170
+200,PSME,Douglas-fir series,260
+210,PSME/AGSP,Douglas-fir/Bluebunch wheatgrass,130
+220,PSME/FEID,Douglas-fir/Idaho fescue,130
+230,PSME/FESC,Douglas-fir/altai fescue,130
+250,PSME/VACA,Douglas-fir/Dwarf huckleberry,250
+260,PSME/PHMA,Douglas-fir/ninebark,260
+280,PSME/VAGL,Douglas-fir/blue huckleberry,280
+290,PSME/LIBO,Douglas-fir/twinflower,290
+310,PSME/SYAL,Douglas-fir/common snowberry,310
+320,PSME/CARU,Douglas-fir/pinegrass,320
+330,PSME/CAGE,Douglas-fir/elk sedge,330
+340,PSME/SPBE,Douglas-fir/white spirea,320
+350,PSME/ARUV,Douglas-fir/kinnikinnick,320
+360,PSME/JUCO,Douglas-fir/common juniper,330
+370,PSME/ARCO,Douglas-fir/heartleaf arnica,310
+380,PSME/SYOR,Douglas-fir/mountain snowberry,250
+400,PICEA,Spruce series,420
+410,PICEA/EQAR,Spruce/common horsetail,420
+420,PICEA/CLUN,Spruce/bride's bonnet,420
+430,PICEA/PHMA,Spruce/mallow ninebark,260
+440,PICEA/GATR,Spruce/sweetscented bedstraw,470
+450,PICEA/VACA,Spruce/dwarf bilberry,640
+460,PICEA/SEST,Spruce/rocky mountain groundsel,850
+470,PICEA/LIBO,Spruce/twinflower,470
+480,PICEA/SMST,Spruce/starry false lily of the valley,470
+500,ABGR,Grand fir series,520
+501,THPL,Western redcedar series,530
+502,TSHE,Western hemlock series,570
+505,ABGR/SPBE,Grand fir/white spiraea,510
+506,ABGR/PHMA,Grand fir/ninebark,510
+510,ABGR/XETE,Grand fir/beargrass,510
+515,ABGR/VAGL,Grand fir/blue huckleberry,510
+516,ABGR/ASCA,Grand fir/wildginger,520
+520,ABGR/CLUN,Grand fir/bride's bonnet,520
+529,ABGR/SETR,Grand fir/arrowleaf ragwort,520
+530,THPL/CLUN,Western redcedar/bride's bonnet,530
+540,THPL/ATFI,Western redcedar/common ladyfern,540
+545,THPL/ASCA,Western redcedar/British Columbia wildginger,530
+550,THPL/OPHO,Western redcedar/devilsclub,550
+555,THPL/GYDR,Western redcedar/western oakfern,530
+560,THPL/ADPE,Western redcedar/northern maidenhair,550
+565,TSHE/GYDR,Western hemlock/western oakfern,570
+570,TSHE/CLUN,Western hemlock/bride's bonnet,570
+575,TSHE/ASCA,Western hemlock/British Columbia wildginger,570
+579,TSHE/MEFE,Western hemlock/rusty menziesia,690
+590,ABGR/LIBO,Grand fir/twinflower,510
+600,ABLA,Subalpine fir series,690
+610,ABLA/OPHO,Subalpine fir/devilsclub,610
+620,ABLA/CLUN,Subalpine fir/twisted stalk,620
+630,ABLA/GATR,Subalpine fir/fragrant bedstraw,660
+635,ABLA/STAM,Subalpine fir/twisted-stalk,620
+640,ABLA/VACA,Subalpine fir/dwarf huckleberry,640
+650,ABLA/CACA,Subalpine fir/bluejoint,640
+660,ABLA/LIBO,Subalpine fir/twinflower,660
+670,ABLA/MEFE,Subalpine fir/menziesia,670
+675,TSME/STAM,Mountain hemlock/claspleaf twisted-stalk,620
+680,TSME/MEFE,Mountain hemlock/menziesia,680
+685,TSME/CLUN,Mountain hemlock/bride's bonnet,620
+690,ABLA/XETE,Subalpine fir/beargrass,690
+700,TSME,Subalpine fir lower subalpine,730
+701,TSME,Mountain hemlock series,710
+710,TSME/XETE,Mountain hemlock/beargrass,710
+720,ABLA/VAGL,Subalpine fir/blue huckleberry,720
+730,ABLA/VASC,Subalpine fir/grouse whortleberry,730
+740,ABLA/ALSI,Subalpine fir/sitka alder,670
+750,ABLA/CARU,Subalpine fir/pinegrass,690
+770,ABLA/CLPS,Subalpine fir/rock clematis,730
+780,ABLA/ARCO,Subalpine fir/heartleaf arnica,690
+790,ABLA/CAGE,Subalpine fir/elk sedge,730
+800,ABLA,Subalpine fir upper subalpine,830
+810,ABLA/RIMO,Subalpine fir/mountain gooseberry,830
+820,ABLA-PIAL/VASC,Subalpine fir/whitebark pine/grouse whortleberry,850
+830,ABLA/LUHI,Subalpine fir/smooth woodrush,830
+840,TSME/LUHI,Mountain hemlock/Hitchcock's smooth woodrush,830
+850,PIAL-ABLA,Whitebark pine-subalpine fir,850
+860,LALY-ABLA,Alpine larch-subalpine fir,850
+870,PIAL,Whitebark pine series,850
+890,ABLA,Subalpine fir timberline,850
+900,PICO,Lodgepole pine series,730
+910,PICO/PUTR,Lodgepole pine/antelope bitterbrush,330
+920,PICO/VACA,Lodgepole pine/dwarf huckleberry,640
+925,PICO/XETE,Lodgepole pine/common beargrass,690
+930,PICO/LIBO,Lodgepole pine/twinflower,660
+940,PICO/VASC,Lodgepole pine/grouse whortleberry,730
+950,PICO/CARU,Lodgepole pine/pinegrass,690
+999,Other,---,999

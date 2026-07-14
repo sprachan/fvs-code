@@ -1,0 +1,635 @@
+---
+title: "Data Preparation"
+author: "Sejal Prachand"
+format:
+  html:
+    embed-resources: true
+bibliography: references.bib
+editor:
+  mode: source
+---
+
+## Dependencies
+
+```{r}
+library(rFVSIEtools)
+library(odbc)
+library(dplyr)
+library(here)
+library(readxl)
+library(ggplot2)
+library(usmap)
+library(sf)
+library(patchwork)
+```
+
+## Read in Data
+
+### Lubrecht
+
+First, the Lubrecht data to get the habitat types that are present there:
+
+```{r}
+data_dir <- here('data', 'fvs_ready')
+lub2018_stands <- read_xlsx(file.path(data_dir, 'FVS_Lubrecht_2018.xlsx'),
+                           sheet = 1)
+```
+
+### FIA
+
+In contrast to the Lubrecht data, FIA data come from databases that we will access using functions from `rFVSIEtools`. Each state has a separate database file, named `SQLite_FIADB_XX.db` where `XX` is the two-letter state code. For each state, I accessed the appropriate database, filtered the condition table to only those plots which were at least 75% forested and inventoried under the new protocol, then used the filtered condition table to subset the FVSTreeInit and FVSStandInit tables from the state-level FIA database. I then filtered the FVS_StandInit table to only include plots from the Inland Empire Variant and that had the current four fixed-radius subplot design (the `NUM_PLOTS` filter; see [FIA2FVS documentation](https://www.fs.usda.gov/fvs/documents/FIA_Data_Quick_Start_Guide_20200914.pdf), p. 16). Additionally, I only took the first remeasurement (REM_CD == 1) to avoid calculating scale factors from the same stand multiple times. I also added three columns: remeasurement code (REM_CD), indicating which remeasurement the plot is at (0, 1, or 2) and how many remeasurements the plot had (N_REM). I only kept trees \>= 3" DBH because FVS-IE grows trees smaller than this using a different model, and I only kept trees of species that are recognized by the IE variant.
+
+```{r}
+#| eval: false
+# fvs_ready <- list(MT = NULL, ID = NULL, WA = NULL) # pre-allocate storage
+# states <- c('MT', 'ID', 'WA') # states that we want data from
+# 
+# for(i in seq_along(states)){
+#   db_path <- here('data', 'raw_data', 'fia', paste0('SQLite_FIADB_', states[i], '.db'))
+#   # all subplots must be forested; only undisturbed/untreated plots
+#   #> that were sampled using the newer protocol (post 2001)
+#   fvs_ready[[i]] <- fetch_cond(db_path, 'COND_STATUS_CD == 1, INVYR >= 2001, CONDPROP_UNADJ == 1, DSTRBCD1 == 0, TRTCD1 == 0') |>
+#     get_FIA_state(db_path, fia_cond_subset = _, add_identifier = TRUE)
+# }
+# 
+# # Process
+# FVS_standInit <- bind_rows(fvs_ready$MT$FVS_StandInit,
+#                            fvs_ready$ID$FVS_StandInit,
+#                            fvs_ready$WA$FVS_StandInit) |>
+#   arrange(PID, INV_YEAR) |>
+#   group_by(PID) |>
+#   # FVS forest codes are in the "location" column of FIA FVS_StandInit table
+#   mutate(FOREST = LOCATION,
+#          REM_CD = seq(0, n()-1),
+#          N_REM = max(REM_CD),
+#          REM_YEAR = ifelse(N_REM == 1, max(INV_YEAR), INV_YEAR[2])) |>
+#   filter(VARIANT %in% c('IE', 'EM'), # need EM to cover our ecoregion
+#          N_REM >= 1,
+#          NUM_PLOTS == 4) |>
+#   ungroup()
+# 
+# FVS_treeInit <- bind_rows(fvs_ready$MT$FVS_TreeInit,
+#                           fvs_ready$ID$FVS_TreeInit,
+#                           fvs_ready$WA$FVS_TreeInit) |>
+#   filter(STAND_CN %in% FVS_standInit$STAND_CN,
+#          DIAMETER >= 3) 
+# rm(fvs_ready)
+```
+
+```{r}
+#| eval: true
+#| echo: false
+
+load(here('fia.rda'))
+```
+
+### FIA species table
+
+The READCORD keyword, which I used to calibrate FVS, requires that there are 23 entries, one for each of the 21 IE-recognized species plus the other hardwood and other softwood categories. FIA data has more than 23 species. Thus, I want to be able to map the FIA species codes to FVS species codes in order to use as much data as possible to calculate READCORD values.
+
+To do so, I created an R-friendly version of the table on pages 4 and 5 of the [Inland Empire variant overview](https://www.fs.usda.gov/sites/default/files/forest-management/fvs-ie-overview.pdf) and read in the species crosswalk data from a spreadsheet provided by the FVS staff under the [variant overview supplemental information tab](https://www.fs.usda.gov/managing-land/forest-management/fvs/documents/guides).
+
+```{r}
+## FVS species codes
+fvs_spcd <- data.frame(fvs_cd = seq(1, 23),
+                    fia_cd = c(119, 073, 202, 
+                               017, 263, 242, 
+                               108, 093, 019, 
+                               122, 264, 101,
+                               113, 072, 133,
+                               066, 231, 746, 
+                               740, 321, 375, 
+                               998, 299),
+                    fvs_abb = c('WP', 'WL', 'DF', 
+                                'GF', 'WH', 'RC', 
+                                'LP', 'ES', 'AF', 
+                                'PP', 'MH', 'WB', 
+                                'LM', 'LL', 'PM', 
+                                'RM', 'PY', 'AS', 
+                                'CO', 'MM', 'PB', 
+                                'OH', 'OS'),
+                    plants_cd = c('PIMO3', 'LAOC', 'PSME', 
+                                   'ABGR', 'TSHE', 'THPL',
+                                   'PICO', 'PIEN', 'ABLA',
+                                   'PIPO', 'TSME', 'PIAL',
+                                   'PIFL2', 'LALY', 'PIMO',
+                                   'JUSC2', 'TABR2', 'POTR5',
+                                   'POPUL', 'ACGL', 'BEPA',
+                                   '2TB', '2TN'))
+
+sp_key <- readxl::read_xls(here('data', 'raw_data', 'FVS_SpeciesCrosswalk.xls'),
+                 sheet = 3, .name_repair = 'universal') |>
+  select(ie_map = IE_Mapped_To, 
+         fia_cd = FIA.CODE, 
+         plants_cd = USDA.PLANTS.SYMBOL) |>
+  mutate(fia_cd = as.numeric(fia_cd)) |>
+  left_join(fvs_spcd, by = join_by(ie_map == fvs_abb),
+            suffix = c('_crosswalk', '_overview'))
+
+
+```
+
+### Habitat Types
+
+I used CoPilot to turn Appendix 11.1 from the FVS-IE variant overview document into a readable .CSV file to map FIA codes to FVS codes. Note that some IE species abbreviations are not up to date with the FIA species abbreviations.
+
+```{r}
+conn <- DBI::dbConnect(RSQLite::SQLite(), 
+                       here('data', 'raw_data', 'fia', 'SQLite_FIADB_MT.db'))
+habtype_ref <- tbl(conn, 'REF_HABTYP_DESCRIPTION') |>
+  collect()
+DBI::dbDisconnect(conn)
+
+ie_habtypes <- readr::read_csv(here('reports', 'nafew2026',
+                                    'habtypes.txt'),
+                               name_repair = 'universal') |>
+  rename(fia_cd = Habitat.Code,
+         scientific_name = Abbreviation,
+         common_name = Habitat.Type.Name,
+         fvs_cd = Original.Habitat.Type) |>
+  mutate(common_name = tolower(common_name),
+         dominant_species = stringr::str_split_i(common_name, '/', 1),
+         understory_species = stringr::str_split_i(common_name, '/', 2))
+```
+
+### Spatial data
+
+I also accessed ecoregion polygon data from <https://data-usfs.hub.arcgis.com/datasets/usfs::ecological-sections-feature-layer/explore?filters=eyJzZWN0aW9uXyI6WzEwLDM0XX0%3D&location=46.144532%2C-113.355679%2C8> for visualization purposes.
+
+```{r}
+ecosec_poly <- st_read(here('data', 'env_data', 'Sections.shp')) |>
+  filter(substr(map_unit_s, 1, 5) == 'M332B')
+```
+
+## Clean up species
+
+I want to assign each species in the FIA data its appropriate FVS sequence number for READCORD purposes. I used the following logic:
+
+- If the species code in fia_cd_overview (i.e., recognized in the IE overview document), grab the fvs_cd associated with that row.
+
+- Otherwise, first check if the species code is in fia_cd_crosswalk (i.e., in the FVS-IE crosswalk spreadsheet).
+
+  - If so, grab the fvs_cd associated with that row.
+
+  - If not, assign a blank.
+
+```{r}
+species_clean <- vector(length = nrow(FVS_treeInit))
+no_match <- 0
+
+for(s in 1:nrow(FVS_treeInit)){
+  spec <- FVS_treeInit$SPECIES[s]
+  if(spec %in% sp_key$fia_cd_overview){
+    species_clean[s] <- fvs_spcd$fvs_cd[which(fvs_spcd$fia_cd == spec)]
+  }else if(spec %in% sp_key$fia_cd_crosswalk){
+    species_clean[s] <- sp_key$fvs_cd[which(sp_key$fia_cd_crosswalk == spec)]
+  }else{
+    no_match <- no_match + 1
+    species_clean[s] <- ''
+  }
+}
+
+FVS_treeInit$fvs_species <- species_clean
+
+no_match
+
+FVS_treeInit <- filter(FVS_treeInit, fvs_species != '')
+rm(species_clean)
+```
+
+## Map Habitat Codes
+
+FVS-IE recognizes 95 habitat codes, but these recognized codes are mapped to just 30 habitat types [@fvsstaff2021]. In order to filter FIA plots by habitat type in an FVS-relevant way, I determined the FVS-IE habitat type using the potential vegetation (PV) information in FIA data and lookup tables from the FVS-IE fortran code.
+
+```{r}
+#| label: map-hab-types-fia
+
+FVS_standInit$mapped_hab <- mapply(map_habcode,
+                                 pv_code = FVS_standInit$PV_CODE,
+                                 pv_ref = FVS_standInit$PV_REF_CODE) |>
+  unname()
+```
+
+I wanted to see if I could find appropriate habitat codes for plots that did not have mapped habitat codes from the Fortran lookup tables could still have habitat codes from the FVS-IE overview document.
+
+```{r}
+no_habs <- filter(FVS_standInit, is.na(mapped_hab)) |>
+  mutate(PV_REF_CODE = as.character(PV_REF_CODE)) |>
+  select(STAND_CN, VARIANT, REGION, FOREST, LOCATION, PV_CODE, PV_REF_CODE,
+         STATE) |>
+  left_join(habtype_ref[c('HABTYPCD', 'PUB_CD', 'SCIENTIFIC_NAME', 'COMMON_NAME', 'VALID')], 
+            by = join_by(PV_CODE == HABTYPCD, PV_REF_CODE == PUB_CD)) |>
+  mutate(no_phase = ifelse(grepl('-', SCIENTIFIC_NAME),
+                           sub('-.*', '', SCIENTIFIC_NAME),
+                           SCIENTIFIC_NAME),
+         COMMON_NAME = tolower(COMMON_NAME),
+         dominant_species = stringr::str_split_i(COMMON_NAME, '/', 1),
+         understory_species = stringr::str_remove(stringr::str_split_i(COMMON_NAME, '/', 2),
+                                                  "-.*$")) |>
+  left_join(ie_habtypes)
+
+```
+
+Some manual cleanup of habitat codes is necessary, mostly for plots in the EM variant (`{r} sum(no_habs$VARIANT == 'EM')` plots in the EM variant missing habitat codes, `{r} sum(no_habs$VARIANT == 'IE')` plots in the IE variant missing habitat codes).
+
+```{r}
+unique(no_habs$no_phase)
+```
+
+I can then use this to fill in some of the missing habitat type entries:
+
+```{r}
+FVS_standInit <- FVS_standInit |>
+  left_join(no_habs[c('STAND_CN', 'fvs_cd')]) |>
+  mutate(FVS_HAB = ifelse(is.na(mapped_hab),
+                          fvs_cd,
+                          mapped_hab)) |>
+  mutate(SAM_WT = '')
+
+FVS_treeInit <- FVS_treeInit |>
+  left_join(FVS_standInit[c('STAND_CN', 'FVS_HAB')]) |>
+  group_by(STAND_CN) |>
+  mutate(fvs.TREE_ID = 1:n())
+```
+
+The Lubrecht data already has FVS-IE habitat codes, but they're in the PV_CODE column. I'll copy them over into a column called FVS_HAB so that running FVS will work:
+
+```{r}
+#| label: map-hab-types-lub
+
+lub2018_stands$FVS_HAB <- lub2018_stands$PV_CODE
+```
+
+## Clean up species
+
+## Get "local" FIA data
+
+To "localize" FVS using FIA data that is ecologically similar at both micro and macro levels, I filtered FIA tables by habitat type (micro) and ecological subsection (macro).
+
+```{r}
+habtype_stands <- filter(FVS_standInit,
+                         FVS_HAB %in% lub2018_stands$FVS_HAB) |>
+  set_stand_cols(map_habcode = FALSE)
+ecosec_stands <- filter(FVS_standInit,
+                        substr(ECOREGION, 1, 5) == 'M332B') |>
+  set_stand_cols()
+habeco_stands <- filter(FVS_standInit,
+                        FVS_HAB %in% lub2018_stands$FVS_HAB,
+                        substr(ECOREGION, 1, 5) == 'M332B') |>
+  set_stand_cols()
+
+habtype_trees <- filter(FVS_treeInit,
+                        STAND_CN %in% habtype_stands$STAND_CN)
+ecosec_trees <- filter(FVS_treeInit,
+                       STAND_CN %in% ecosec_stands$STAND_CN) 
+habeco_trees <- filter(FVS_treeInit,
+                       STAND_CN %in% habeco_stands$STAND_CN)
+```
+
+## Visualize data
+
+Because I will be using habitat type, ecosection, and the combination of the two to find "local" FIA plots to calibrate FVS, I want to visualize the number and location of plots with the given habitat type and ecosection. For the Lubrecht data, this is straightforward: everything will be in the same ecosection, so I need only visualize the number of stands of each habitat type represented in the data.
+
+```{r}
+p_lub_hab <- ggplot(lub2018_stands)+
+  geom_bar(aes(x = factor(FVS_HAB)))+
+  labs(x = 'FVS-IE habitat type', title = 'Lubrecht', y = '# of stands')+
+  theme_bw()
+p_lub_hab
+```
+
+Most Lubrecht stands are the Douglas-fir/Heartleaf arnica habitat type (310). The other common habitat types (280, 290, 320) are also Douglas-fir habitat types. A few habitat types are represented by just one plot.
+
+I want to examine the distribution of habitat types in the FIA data both in terms of frequency and in terms of spatial distribution. I'll only look at FIA plots that have habitat types matching those found in Lubrecht.
+
+```{r}
+#| label: fia-hab-type-dist
+
+p_fia_hab <- habtype_stands |>
+  filter(REM_CD == 0) |>
+  ggplot()+
+  geom_bar(aes(x = factor(FVS_HAB)))+
+  labs(x = 'FVS-IE habitat type', title = 'FIA data', y = '# of stands')+
+  theme_bw()
+p_fia_hab
+```
+
+This distribution is clearly different from Lubrecht, but there looks to be a pretty large number of stands for the most common Lubrecht habitat types. This is more clearly seen in a stacked plot:
+
+```{r}
+p_lub_hab/p_fia_hab+plot_layout(guides = 'collect')
+```
+
+We can also look at the number of trees per habitat type:
+
+```{r}
+p_tree_hab <- habtype_trees |>
+  mutate(STAND_CN = as.numeric(STAND_CN)) |>
+  select(-FVS_HAB) |>
+  left_join(habtype_stands[c('STAND_CN', 'FVS_HAB')]) |>
+  ggplot()+
+  geom_bar(aes(x = factor(FVS_HAB)))+
+  labs(x = 'FVS-IE habitat type', title = 'FIA data', y = '# of trees')+
+  theme_bw()
+p_lub_hab/p_tree_hab
+```
+
+There are at least 200 trees for each habitat type.
+
+There is a pretty broad geographic spread in FIA plots for each Lubrecht habitat type, with matching plots appearing on both sides of the Bitterroots for some habitat types:
+
+```{r}
+study_region <- us_map(include = c('MT', 'ID', 'WA', 'OR', 'WY')) |>
+  st_transform(crs = 'epsg:4269') |>
+  st_crop(c(xmin = -120, ymin = 43, xmax = -100, ymax = 50))
+
+ggplot()+geom_sf(data = study_region, color = '#555', fill = NA, lwd = 1.5)+ 
+  annotate(geom = 'point', x = -114, y = 47, pch = 13, size = 5, stroke = 1.5)+
+  theme_minimal()
+ggsave(here('reports', 'nafew2026', 'figures', 'study_region.png'),
+       width = 6, height = 4, units = 'in')
+
+ggplot()+
+  geom_sf(data = study_region, color = '#555', fill = NA, lwd = 1.5)+
+  geom_sf(data = st_as_sf(filter(habtype_stands, REM_CD == 0), 
+                          coords = c('LONGITUDE', 'LATITUDE'),
+                          crs = 'epsg:4269'),
+          pch = 21,
+          color = 'black',
+          aes(fill = factor(FVS_HAB)), alpha = 0.5)+
+  annotate(geom = 'point', x = -114, y = 47, pch = 13, bg = 'white', size = 5, stroke = 1.5)+
+  labs(fill = '')+
+  theme_bw()+
+  scale_color_discrete(guide = guide_legend(nrow = 2,
+                                           position = 'bottom',
+                                           direction = 'horizontal'))
+ggsave(here('reports', 'nafew2026', 'figures', 'fia_habtype_map.png'),
+       width = 8, height = 6, units = 'in')
+
+```
+
+I compared these distributions to the geographic range of FIA plots in the same ecological subsection as Lubrecht:
+
+```{r}
+ggplot()+
+  geom_sf(data = study_region, fill = NA, lwd = 1.5, color = '#555')+
+  geom_sf(data = ecosec_poly, fill = '#bbb', color = '#bbb', lwd = 1.5)+
+  geom_sf(data = st_as_sf(filter(ecosec_stands, REM_CD == 0), 
+                          coords = c('LONGITUDE', 'LATITUDE'),
+                          crs = 'epsg:4269'), alpha = 0.25,
+          col = 'navy')+
+  annotate(geom = 'point', x = -114, y = 47, pch = 13, size = 5, stroke = 1.5)+
+  theme_bw()
+ggsave(here('reports', 'nafew2026', 'figures', 'fia_ecoregion_map.png'),
+       width = 8, height = 6, units = 'in')
+```
+
+Finally, I examined how habitat type varied within the ecosection:
+
+```{r}
+ggplot()+
+  geom_sf(data = study_region, fill = NA, lwd = 1.5, color = '#555')+
+  geom_sf(data = ecosec_poly, fill = '#bbb', color = '#bbb', lwd = 1.5)+
+  geom_sf(data = st_as_sf(filter(habeco_stands, REM_CD == 0), 
+                          coords = c('LONGITUDE', 'LATITUDE'),
+                          crs = 'epsg:4269'), alpha = 0.5,
+          pch = 21, color = 'black',
+          aes(fill = factor(FVS_HAB)))+
+  annotate(geom = 'point', x = -114, y = 47, pch = 13, size = 5, stroke = 1.5)+
+  theme_bw()+
+  theme(strip.text = element_text(size = 8, margin = margin(0, 0, 0, 0)),
+        legend.position = 'none')
+ggsave(here('reports', 'nafew2026', 'figures', 'fia_habeco_map.png'),
+       width = 8, height = 6, units = 'in')  
+```
+
+```{r}
+table(filter(habeco_stands, REM_CD == 0)$FVS_HAB)
+table(lub2018_stands$FVS_HAB)
+```
+
+There are now some Lubrecht habitat types that have no FIA plots associated with them: habitat types 420 and 999.
+
+```{r}
+rm(p_fia_hab, p_lub_hab, p_tree_hab)
+```
+
+## Get Scale Factors
+
+```{r}
+process_sim <- function(sim_list){
+  sim_list$tree_list |>
+  group_by(PID) |>
+  mutate(REM_CD = case_when(year == min(year) ~ 0, year == max(year) ~ 1, 
+                            .default = NA)) |>
+  rename(DIAMETER = dbh,
+         YEAR = year)
+}
+
+get_sfs <- function(sim_list, tree_list, grouping_cols){
+  tl_fvs <- process_sim(sim_list)
+  tl_fia <- tree_list |>
+      dplyr::filter(TUID %in% tl_fvs$TUID, REM_CD < 2) |>
+  rename(YEAR = INV_YEAR)
+  full_join(tl_fvs[c('DIAMETER', 'YEAR', 'TUID', 'REM_CD', 'PID')], 
+                             tl_fia[c('DIAMETER', 'YEAR', 'TUID', 
+                                      'REM_CD', 'PID', 'HISTORY', 
+                                      'DAMAGE1', 'SPECIES', 'FVS_HAB',
+                                      'fvs_species')], 
+                             by = c('TUID', 'REM_CD', 'PID', 'YEAR'),
+                             suffix = c('_FVS', '_FIA')) |>
+  # only want trees that have both FIA and FVS (re)measurements/projections, respectively
+  dplyr::filter(!is.na(DIAMETER_FVS), !is.na(DIAMETER_FIA)) |>
+  group_by(TUID, PID, SPECIES, fvs_species, FVS_HAB) |>
+  dplyr::summarize(growth_pd = YEAR[2]-YEAR[1],
+                   status_1 = HISTORY[1],
+                   status_2 = HISTORY[2],
+                   dg_FVS = DIAMETER_FVS[2]-DIAMETER_FVS[1],
+                   dg_FIA = round(DIAMETER_FIA[2]-DIAMETER_FIA[1], 2),
+                   empirical_sf = dg_FIA/dg_FVS,
+                   initial_dbh = DIAMETER_FIA[1]) |>
+  filter(dg_FIA >= 0) |>
+  dplyr::ungroup() |>
+  group_by(across(all_of(grouping_cols))) |>
+  summarize(avg_dg_FIA = mean(dg_FIA, na.rm = TRUE),
+            avg_dg_FVS = mean(dg_FVS, na.rm = TRUE),
+            avg_sf = median(dg_FIA/dg_FVS, na.rm = TRUE),
+            N = n())
+}
+```
+
+I ran the stands to get uncalibrated FVS diameter growth predictions, then calculated a scale factor as the mean quotient of FIA to FVS diameter growth (diameter growth FIA/diameter growth FVS).
+
+### Habitat type
+
+```{r}
+# Directory for .key, .tre, and .out files
+dt <- paste0('habtype_fia', format(Sys.Date(), '%b%d%Y'), '_', 
+             format(Sys.time(), '%H%M'), collapse = '')
+out_dir <- here('reports', 'nafew2026', 'fvs_runs', dt)
+dir.create(out_dir)
+fvs_bin <- 'C:/FVS/FVSSoftware/FVSbin'
+```
+
+```{r}
+future::plan('multisession', workers = 4)
+habtype_sim <- filter(habtype_stands, REM_CD == 0) |>
+  run_FVS_parallel(habtype_trees,
+                   n_batches = 2,
+                   simple_output = TRUE,
+                   out_dir = out_dir,
+                   fvs_bin = fvs_bin,
+                   proj_len = 11,
+                   calibrate = FALSE,
+                   random_seed = 2025)
+```
+
+```{r}
+habtype_sfs <- get_sfs(habtype_sim, habtype_trees,
+                       grouping_cols = c('SPECIES', 'fvs_species', 'FVS_HAB'))
+by_hab <- habtype_sfs |>
+  ungroup() |>
+  summarize(.by = 'FVS_HAB', N = sum(N)) 
+print(by_hab, n = 16)
+print(sum(habtype_sfs$N))
+print(mean(by_hab$N))
+rm(habtype_sim) # large object not needed anymore
+```
+
+### Ecosection
+
+```{r}
+# Directory for .key, .tre, and .out files
+dt <- paste0('ecosec_fia', format(Sys.Date(), '%b%d%Y'), '_', 
+             format(Sys.time(), '%H%M'), collapse = '')
+out_dir <- here('reports', 'nafew2026', 'fvs_runs', dt)
+dir.create(out_dir)
+
+future::plan('multisession', workers = 4)
+ecosec_sim <- filter(habtype_stands, REM_CD == 0) |>
+  run_FVS_parallel(habtype_trees,
+                   n_batches = 2,
+                   simple_output = TRUE,
+                   out_dir = out_dir,
+                   fvs_bin = fvs_bin,
+                   proj_len = 11,
+                   year_col = 'REM_YEAR',
+                   calibrate = FALSE,
+                   random_seed = 2025)
+```
+
+Now get scale factors:
+
+```{r}
+ecosec_sfs <- get_sfs(ecosec_sim, ecosec_trees,
+                      grouping_cols = c('SPECIES', 'fvs_species'))
+print(sum(ecosec_sfs$N))
+rm(ecosec_sim) # large object not needed anymore
+```
+
+### Habitat and Ecosection
+
+```{r}
+# Directory for .key, .tre, and .out files
+dt <- paste0('habeco_fia', format(Sys.Date(), '%b%d%Y'), '_', 
+             format(Sys.time(), '%H%M'), collapse = '')
+out_dir <- here('reports', 'nafew2026', 'fvs_runs', dt)
+dir.create(out_dir)
+
+future::plan('multisession', workers = 4)
+habeco_sim <- filter(habeco_stands, REM_CD == 0) |>
+  run_FVS_parallel(habeco_trees,
+                   n_batches = 2,
+                   simple_output = TRUE,
+                   out_dir = out_dir,
+                   fvs_bin = fvs_bin,
+                   proj_len = 11,
+                   calibrate = FALSE,
+                   random_seed = 2025)
+```
+
+```{r}
+habeco_sfs <- get_sfs(habeco_sim, habeco_trees,
+                      grouping_cols = c('SPECIES',
+                                        'FVS_HAB',
+                                        'fvs_species'))
+print(sum(habeco_sfs$N))
+rm(habeco_sim) # large object not needed anymore
+```
+
+## Format scale factors
+
+We need to supply READCORD as a vector of length 23.
+
+```{r}
+ecosec_READCORD <- ecosec_sfs |>
+  ungroup() |>
+  mutate(fvs_species = as.numeric(fvs_species)) |>
+  full_join(fvs_spcd, by = join_by(fvs_species == fvs_cd)) |>
+  group_by(fvs_species) |>
+  arrange(fvs_species) |>
+  summarize(avg_sf = mean(avg_sf, na.rm = TRUE)) |>
+  mutate(avg_sf = ifelse(is.na(avg_sf),
+                         1,
+                         avg_sf),
+         sf = round(avg_sf, 2)) |>
+  select(sf) |>
+  unlist()
+
+habtype_READCORD <- habtype_sfs |>
+  ungroup() |>
+  mutate(fvs_species = as.numeric(fvs_species)) |>
+  full_join(fvs_spcd, by = join_by(fvs_species == fvs_cd)) |>
+  # need each FVS habitat type to have every species
+  tidyr::complete(FVS_HAB, 
+                  fvs_species = fvs_spcd$fvs_cd) |>
+  group_by(FVS_HAB, fvs_species) |>
+  arrange(FVS_HAB, fvs_species) |>
+  summarize(avg_sf = mean(avg_sf, na.rm = TRUE)) |>
+  mutate(avg_sf = ifelse(is.na(avg_sf),
+                         1,
+                         avg_sf),
+         sf = round(avg_sf, 2)) |>
+  ungroup() |>
+  select(sf, FVS_HAB)
+
+habtype_READCORD <- split(habtype_READCORD, habtype_READCORD$FVS_HAB) |>
+  lapply(\(x) unlist(select(x, sf)))
+
+habeco_READCORD <- habeco_sfs |>
+  ungroup() |>
+  mutate(fvs_species = as.numeric(fvs_species)) |>
+  full_join(fvs_spcd, by = join_by(fvs_species == fvs_cd)) |>
+  # need each FVS habitat type to have every species
+  tidyr::complete(FVS_HAB, 
+                  fvs_species = fvs_spcd$fvs_cd) |>
+  group_by(FVS_HAB, fvs_species) |>
+  arrange(FVS_HAB, fvs_species) |>
+  summarize(avg_sf = mean(avg_sf, na.rm = TRUE)) |>
+  mutate(avg_sf = ifelse(is.na(avg_sf),
+                         1,
+                         avg_sf),
+         sf = round(avg_sf, 2)) |>
+  ungroup() |>
+  select(sf, FVS_HAB)
+
+habeco_READCORD <- split(habeco_READCORD, habeco_READCORD$FVS_HAB) |>
+  lapply(\(x) unlist(select(x, sf)))
+  
+```
+
+## Save out READCORDs
+
+```{r}
+saveRDS(habtype_READCORD, here('data', 'sim_outputs', 'nafew_sfs', 
+                               'habtype_READCORD.rds'))
+saveRDS(ecosec_READCORD, here('data', 'sim_outputs', 'nafew_sfs', 
+                               'ecosec_READCORD.rds'))
+saveRDS(habeco_READCORD, here('data', 'sim_outputs', 'nafew_sfs', 'habeco_READCORD.rds'))
+```
+
+## Session Information
+
+```{r}
+sessionInfo()
+```

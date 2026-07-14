@@ -1,0 +1,260 @@
+---
+title: "Analyzing FVS runs"
+format: html
+editor:
+  mode: source
+---
+
+## Dependencies
+
+```{r}
+#| label: load-packages
+library(readxl)
+library(here)
+library(dplyr)
+library(ggplot2)
+library(rFVSIEtools)
+```
+
+## Load Data
+
+```{r}
+# raw Lubrecht data
+lub2018_stands <- read_xlsx(here('data', 'fvs_ready', 'FVS_Lubrecht_2018.xlsx'),
+                           sheet = 1) |>
+  rename(STAND_CN = STAND_ID) |>
+  #set_stand_cols() |>
+  mutate(STDORGCD = 0,
+         FVS_HAB = as.numeric(PV_CODE),
+         FOREST = 116,
+         STDIDENT = paste0(gsub('_', '', STAND_CN), ' ', 
+                           tolower(gsub('_', '', STAND_CN))))
+lub2018_trees <- read_xlsx(here('data', 'fvs_ready', 'FVS_Lubrecht_2018.xlsx'),
+                            sheet = 2) |>
+  rename(STAND_CN = STAND_ID) |>
+  mutate(CRRATIO = as.numeric(CRRATIO)) |>
+  set_tree_cols(map_habcode = FALSE, stand_info = lub2018_stands)
+lub2023_stands <- read_xlsx(here('data', 'fvs_ready', 'FVS_Lubrecht_2023.xlsx'),
+                           sheet = 1)
+lub2023_trees <- read_xlsx(here('data', 'fvs_ready', 'FVS_Lubrecht_2023.xlsx'),
+                            sheet = 2)
+lub2018_trees$TUID <- paste(lub2018_trees$STAND_CN, lub2018_trees$TAG_ID, 
+                            sep = '_')
+lub2023_trees$TUID <- paste(lub2023_trees$STAND_ID, lub2023_trees$TAG_ID,
+                             sep = '_')
+matched_TUIDs <- inner_join(lub2018_trees['TUID'], lub2023_trees['TUID']) 
+
+lub2018_trees <- left_join(matched_TUIDs, lub2018_trees)
+lub2023_trees <- left_join(matched_TUIDs, lub2023_trees)
+
+# Simulation Results
+load(here('reports','nafew2026', 'all_carbon.rda'))
+load(here('reports', 'nafew2026', 'all_trees.rda'))
+```
+
+## Visualize scale factors
+
+```{r}
+habtype_readcord <- readRDS(here('data', 'sim_outputs', 'nafew_sfs',
+                                 'habtype_READCORD.rds')) |>
+  as.data.frame()
+habtype_readcord <- habtype_readcord |>
+  mutate(species = rownames(habtype_readcord)) |>
+  tidyr::pivot_longer(cols = -species, cols_vary = 'slowest',
+                      names_to = 'habitat_type', values_to = 'scale_factor')
+habeco_readcord <- readRDS(here('data', 'sim_outputs', 'nafew_sfs',
+                                'habeco_READCORD.rds')) |>
+  as.data.frame()
+habeco_readcord <- habeco_readcord |>
+  mutate(species = rownames(habeco_readcord)) |>
+  tidyr::pivot_longer(cols = -species, cols_vary = 'slowest',
+                      names_to = 'habitat_type', values_to = 'scale_factor')
+ecosec_readcord <- readRDS(here('data', 'sim_outputs', 'nafew_sfs',
+                                'ecosec_READCORD.rds')) |>
+  as.data.frame()
+colnames(ecosec_readcord) <- 'scale_factor'
+ecosec_readcord <- ecosec_readcord |>
+  mutate(species = rownames(ecosec_readcord),
+         habitat_type = '')
+
+load(here('reports', 'nafew2026', 'selfcalib_readcord.rda'))
+
+sc_readcord <- sc_readcord |>
+  mutate(species = as.character(species),
+         habitat_type = as.character(PV_CODE)) |>
+  summarize(.by = c(species, habitat_type),
+            scale_factor = mean(scale_factor, na.rm = TRUE)) 
+
+sfs <- bind_rows(habitat = habtype_readcord, habeco = habeco_readcord, 
+                 ecosection = ecosec_readcord,
+                 .id = 'treatment') |>
+  mutate(species = substr(species, 3, nchar(species)),
+         habitat_type = substr(habitat_type, 2, nchar(habitat_type))) |>
+  bind_rows(self_calib = sc_readcord) |>
+  mutate(treatment = ifelse(is.na(treatment), 'self_calib', treatment),
+         species_clean = case_when(species == 3 ~ 'Douglas-Fir',
+                                   species == 7 ~ 'Lodgepole Pine',
+                                   species == 2 ~ 'Western Larch',
+                                   species == 10 ~ 'Ponderosa Pine'),
+         dominant_tree = case_when(habitat_type <= 340&habitat_type >= 250 ~ 'PSME',
+                                   habitat_type == 130 ~ 'Scree',
+                                   substr(habitat_type, 1, 1) == 4 ~ 'PICEA',
+                                   habitat_type >= 620&habitat_type <= 730 ~ 'ABLA',
+                                   habitat_type == ''|habitat_type == 999 ~ 'Other')) 
+```
+
+Now the plotting:
+
+```{r}
+summarize(sfs, .by = c(species, species_clean, treatment),
+          mean_sf = mean(scale_factor, na.rm = TRUE)) |>
+  filter(species %in% c(3, 7, 2, 10)) |>
+  ggplot()+
+  geom_hline(aes(yintercept = 1), col = 'black', lty = 'dashed')+
+  geom_jitter(data = filter(sfs, species %in% c(3, 7, 2, 10),
+                            treatment != 'ecosection'),
+             aes(x = treatment,
+                 y = scale_factor, color = dominant_tree),
+             width = 0.2, alpha = 0.5)+
+  geom_point(aes(x = treatment, y = mean_sf), shape = '-',
+             size = 10)+
+  facet_wrap(facets = vars(species_clean))+
+  scale_color_brewer(type = 'qual', palette = 'Set1')+
+  theme_bw()+
+  labs(x = 'Data Source', y = 'Scale Factor', color = 'Dominant tree in Habitat Type')+
+  theme(strip.text = element_text(size = 18),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 12))+
+  scale_y_continuous(breaks = seq(0, 2, by = 0.5), limits = c(0, 2))
+
+ggsave(here('reports', 'nafew2026', 'figures', 'sf_compare.png'),
+       width = 12, height  = 6)
+```
+
+## Diameter prediction error
+
+Calculating prediction error is a matter of matching each tree's growth prediction up with the actual remeasurement.
+
+```{r}
+large_2018 <- all_trees |>
+  filter(year == 2018, dbh >= 3) |>
+  select(TUID) |>
+  distinct() |>
+  as.vector() |>
+  unlist()
+  
+tree_errs <- all_trees |>
+  filter(year == 2023, TUID %in% large_2018) |>
+  rename('DIAMETER' = 'dbh') |>
+  left_join(lub2023_trees[c('TUID', 'DIAMETER', 'HISTORY')],
+            suffix = c('_FVS', '_MEAS'),
+            by = join_by(TUID)) |>
+  filter(HISTORY == 1) |>
+  mutate(err = DIAMETER_FVS-DIAMETER_MEAS)
+tree_err_summary <- tree_errs |>
+  group_by(calibration) |>
+  summarize(mean_err = mean(err),
+            sd_err = sd(err),
+            median_err = median(err),
+            lower_quant = quantile(err, 0.25),
+            upper_quant = quantile(err, 0.75)) |>
+  mutate(IQR = upper_quant-lower_quant)
+
+tree_err_summary$clean_cal <- factor(tree_err_summary$calibration,
+                      levels = tree_err_summary$calibration,
+                      labels = c('Ecosection', 
+                                 'Habitat+Ecosection', 
+                                 'Habitat Type', 
+                                 'None', 
+                                 'Self')) |>
+  forcats::fct_reorder(abs(tree_err_summary$median_err), .desc = TRUE) |>
+  as.ordered()
+
+tree_errs <- left_join(tree_errs, tree_err_summary[c('calibration', 'clean_cal')])
+```
+
+I plotted these errors by calibration type.
+
+```{r}
+ggplot(tree_errs)+
+  geom_histogram(aes(x = err), color = '#444', fill = 'lightgrey')+
+  geom_vline(aes(xintercept = 0), color = 'black', lty = 'dashed')+
+  geom_text(data = tree_err_summary, 
+            aes(label = paste0('median: \n', round(median_err, 2))), x = 3, y = 1250,
+            col = 'blue')+
+  facet_wrap(facets = vars(clean_cal), nrow = 1)+
+  theme_bw()+
+  theme(strip.text = element_text(size = 18),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 12))+
+  labs(x = 'Diameter prediction error (predicted - actual; in)',
+       y = 'Count')
+
+ggsave(here('reports', 'nafew2026', 'figures', 'dbh_err_dists.png'),
+       width = 16, height = 4, units = 'in')
+```
+
+```{r}
+filter(tree_errs, abs(err) <= 2.5) |>
+ggplot()+
+  geom_histogram(aes(x = err), color = '#444', fill = 'lightgrey')+
+  geom_vline(aes(xintercept = 0), color = 'black', lty = 'dashed')+
+  facet_wrap(facets = vars(clean_cal), nrow = 1)+
+  theme_bw()+
+  theme(strip.text = element_text(size = 18),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 12))+
+  labs(x = 'Diameter prediction error (predicted - actual; in)',
+       y = 'Count')
+
+ggsave(here('reports', 'nafew2026', 'figures', 'dbh_err_cutoff_dist.png'),
+       width = 16, height = 4, units = 'in')
+```
+
+## Carbon Pools
+
+```{r}
+convert_c <- function(c_tons_ac){c_tons_ac*2000/2.204*44/12}
+
+c_check <- all_carbon |>
+  filter(Year == 2018) |>
+  mutate(abg = convert_c(Aboveground_Total_Live)) |>
+  select(StandID, abg)
+
+carbon_summ <- all_carbon |>
+  mutate(total_tree_carbon = Aboveground_Total_Live+Belowground_Live+
+           Belowground_Dead+Standing_Dead) |>
+  select(calibration, StandID, Year, Aboveground_Total_Live, total_tree_carbon) |>
+  tidyr::pivot_longer(cols = c(Aboveground_Total_Live,
+                               total_tree_carbon),
+                      names_to = 'Pool',
+                      values_to = 'Carbon') |>
+  summarize(Carbon_tons_ac = mean(Carbon),
+            .by = c(calibration, Year, Pool)) |>
+  mutate(Pool_clean = case_when(Pool == 'Aboveground_Total_Live' ~ 'Live aboveground',
+                             Pool == 'total_tree_carbon' ~ 'All trees'),
+         Carbon_kg_ac = Carbon_tons_ac*2000/2.204,
+         Carbon_kg_ha = Carbon_kg_ac/0.405,
+         Carbon_CO2e_kg_ac = convert_c(Carbon_tons_ac)) 
+```
+
+```{r}
+ggplot(carbon_summ)+
+  geom_point(aes(x = Year, y = Carbon_kg_ha/1000, col = calibration),
+             size = 3)+
+  geom_line(aes(x = Year, y = Carbon_kg_ha/1000, group = calibration, col = calibration), lwd = 1.5)+
+  facet_wrap(facets = vars(Pool_clean))+
+  theme_bw()+
+  labs(x = 'Year', y = 'Carbon (mt/ha)', color = 'Calibration Data Source')+
+  theme(strip.text = element_text(size = 18),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 18),
+        legend.text = element_text(size = 12),
+        legend.position = 'bottom')
+
+ggsave(here('reports', 'nafew2026', 'figures', 'carbon_trajectories_per_plot.png'),
+       width = 16, height = 8, units = 'in')
+```
