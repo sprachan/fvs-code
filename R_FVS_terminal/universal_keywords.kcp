@@ -1,0 +1,30 @@
+*
+* basics
+*
+NOSCREEN
+* NOTRIPLE
+* Unstar ECHOSUM if you want text summary output *.sum
+* ECHOSUM
+NUMCYCLE  10
+*
+* SpGroup: Defines a group of species referenced by a single name.
+*
+SpGroup      NONPPWS
+DF ER GO LP NC OJ PD PB PW AS RM PM PI OH OS
+*
+* Volume adjustments per forest cruise parameters/averages
+*   -Flewelling profile model equation 203FW2W122
+*   -Sawtimber Merchantable top limit = 6 inches
+*   -Pulp Merchantable top limit = 4 inches
+*   -MBF/CCF ratio = .5
+*   -stump height = 1 foot
+*
+VolEqNum          PP203FW2W122203FW2W122
+*
+* change board foot merch specs
+*
+BFVolume           0       ALL       9.0       6.0         1        80         6
+*
+* change cubic foot merch specs
+*
+Volume             0       ALL         4         4         1        80         6
