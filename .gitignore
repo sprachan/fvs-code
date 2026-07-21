@@ -18,10 +18,12 @@ fia_calib/labnotes/
 fia_calib/reports/nafew2026/*.rda
 misc_code/
 fia_calib/scripts/superceded/
+fia_calib/raw_data/
 fia_calib/data/raw_data/
 fia_calib/data/fvs_runFiles/
 fia_calib/data/sim_outputs/
-fia_calib/data/env_data
+fia_calib/data/env_data/
+fia_calib/data/*.rds
 fia_calib/model_outputs/
 fia_calib/figures/
 .positai
