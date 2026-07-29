@@ -4,7 +4,13 @@
 #>  in some way to make fitting the model feasible given my computing power.
 #>  This initial approach is to download the data for every state covered by the
 #>  IE variant, then take plots that fall within the variant outline (provided
-#>  by the USFS) and plots that fall within 
+#>  by the USFS) and plots that fall within 100km of the outline. Plots are
+#>  further filtered to only retain plots that had been established under the 
+#>  new protocol (post-2000), fell under the usual FIA sampling intensity,
+#>  and had been measured at least 2 times total. When going through each state
+#>  database, I also filtered to only plots within that state (matching STATECD
+#>  to state of interest) to avoid double-including plots that were near state
+#>  borders.
 #> 
 #> Outputs: data/fia_spatial_filt.RDS
 # Simple feature collection with 22509 features and 12 fields
