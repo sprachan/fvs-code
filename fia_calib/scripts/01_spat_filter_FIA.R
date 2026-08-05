@@ -13,21 +13,24 @@
 #>  borders.
 #> 
 #> Outputs: data/fia_spatial_filt.RDS
-# Simple feature collection with 22509 features and 12 fields
-# Geometry type: POINT
-# Dimension:     XY
-# Bounding box:  xmin: -1771961 ymin: 2534706 xmax: -1165271 ymax: 3096578
-# Projected CRS: USA_Contiguous_Albers_Equal_Area_Conic_USGS_version + NAVD88 height
-# # A tibble: 22,509 × 13
-# PLOT_CN          INVYR STATECD UNITCD COUNTYCD  PLOT KINDCD INTENSITY           geometry          PID   N_MEAS REM_CD EMAP_HEX
-# <chr>             <int>   <int>  <int>    <int> <int>  <int>    <chr>          <POINT [m]>       <chr>  <int>  <int>    <dbl>
-# 1  117900370106…  2006      16      2        3 80059      1         1   (-1614278 2633682) 16003280059      2      1    24392
-# 2  188772234020…  2016      16      2        3 80059      2         1   (-1614278 2633682) 16003280059      2      2    24392
-# 3  372754220106…  2010      16      2        3 80113      1         1   (-1623740 2611215) 16003280113      2      1    24393
-# 4  355078214489…  2020      16      2        3 80113      2         1   (-1623740 2611215) 16003280113      2      2    24393
-# # ... etc
+# 'data.frame':	22509 obs. of  15 variables:
+# $ PLOT_CN  : chr  "11790037010690" "188772234020004" "37275422010690" "355078214489998" ...
+# $ INVYR    : int  2006 2016 2010 2020 2005 2015 2006 2016 2011 2021 ...
+# $ STATECD  : int  16 16 16 16 16 16 16 16 16 16 ...
+# $ UNITCD   : int  2 2 2 2 2 2 2 2 2 2 ...
+# $ COUNTYCD : int  3 3 3 3 3 3 3 3 3 3 ...
+# $ PLOT     : int  80059 80059 80113 80113 80234 80234 80239 80239 80290 80290 ...
+# $ KINDCD   : int  1 2 1 2 1 2 1 2 1 2 ...
+# $ INTENSITY: chr  "1" "1" "1" "1" ...
+# $ PID      : chr  "16003280059" "16003280059" "16003280113" "16003280113" ...
+# $ N_MEAS   : int  2 2 2 2 2 2 2 2 2 2 ...
+# $ REM_CD   : int  1 2 1 2 1 2 1 2 1 2 ...
+# $ EMAP_HEX : num  24392 24392 24393 24393 24264 ...
+# $ x        : num  -1614278 -1614278 -1623740 -1623740 -1593990 ...
+# $ y        : num  2633682 2633682 2611215 2611215 2617088 ...
+# $ epsg     : chr  "epsg:102039" "epsg:102039" "epsg:102039" "epsg:102039" ... 
 #> 
-#> Notes: FIA data is in the NAD83 datum, per FIA NFI database documentation. 
+#> Notes: Original FIA data is in the NAD83 datum, per FIA NFI database documentation. 
 #> 
 #>
 #> Data Sources:
@@ -185,4 +188,42 @@ ggplot(fia_per_hex)+
           fill = NA, lwd = 1)
 
 # Write dataframe to .RDS object ----
-saveRDS(fia_with_emap, file = file.path('data', 'fia_spatial_filt.RDS'))
+# terra has better tools for converting spatial data back to regular dataframe
+fia_out <- fia_with_emap |>
+  terra::vect() |> 
+  as.data.frame(geom = 'XY') |>
+  mutate(epsg = paste0('epsg:', terra::crs(fia_with_emap, describe = TRUE)['code']))
+saveRDS(fia_out, file = file.path('data', 'fia_spatial_filt.RDS'))
+
+# Session Info ----
+sessionInfo()
+# R version 4.6.1 (2026-06-24 ucrt)
+# Platform: x86_64-w64-mingw32/x64
+# Running under: Windows 11 x64 (build 26200)
+# 
+# Matrix products: default
+# LAPACK version 3.12.1
+# 
+# locale:
+# [1] LC_COLLATE=English_United States.utf8  LC_CTYPE=English_United States.utf8    LC_MONETARY=English_United States.utf8
+# [4] LC_NUMERIC=C                           LC_TIME=English_United States.utf8    
+# 
+# time zone: America/Denver
+# tzcode source: internal
+# 
+# attached base packages:
+# [1] stats     graphics  grDevices utils     datasets  methods   base     
+# 
+# other attached packages:
+# [1] viridis_0.6.5          viridisLite_0.4.3      ggplot2_4.0.3          usmap_1.0.0            sf_1.1-1              
+# [6] dplyr_1.2.1            rFVSIEtools_0.0.0.9000
+# 
+# loaded via a namespace (and not attached):
+# [1] utf8_1.2.6         generics_0.1.4     class_7.3-23       KernSmooth_2.23-26 RSQLite_3.53.3     stringi_1.8.7     
+# [7] magrittr_2.0.5     grid_4.6.1         RColorBrewer_1.1-3 pkgload_1.5.3      fastmap_1.2.0      blob_1.3.0        
+# [13] e1071_1.7-17       DBI_1.3.0          gridExtra_2.3      purrr_1.2.2        scales_1.4.0       codetools_0.2-20  
+# [19] cli_3.6.6          rlang_1.3.0        dbplyr_2.6.0       units_1.0-1        bit64_4.8.2        withr_3.0.3       
+# [25] cachem_1.1.0       otel_0.2.0         tools_4.6.1        memoise_2.0.1      usmapdata_1.0.0    vctrs_0.7.3       
+# [31] R6_2.6.1           proxy_0.4-29       lifecycle_1.0.5    classInt_0.4-11    stringr_1.6.0      bit_4.6.0         
+# [37] pkgconfig_2.0.3    terra_1.9-34       pillar_1.11.1      gtable_0.3.6       glue_1.8.1         Rcpp_1.1.1-1.1    
+# [43] tibble_3.3.1       tidyselect_1.2.1   rstudioapi_0.18.0  farver_2.1.2       compiler_4.6.1     S7_0.2.2
