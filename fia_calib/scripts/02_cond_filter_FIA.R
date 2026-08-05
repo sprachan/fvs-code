@@ -31,7 +31,7 @@
 # $ y             : num  2644195 2644195 2622667 2622667 2632726 ...
 # $ epsg          : chr  "epsg:102039" "epsg:102039" "epsg:102039" "epsg:102039" ...
 #> 
-#> Notes:
+#> Notes: CN in the output = COND.CN = FVS_STANDINIT_COND.STAND_CN
 #>
 #> Data Sources: 
 #> - FIA data
