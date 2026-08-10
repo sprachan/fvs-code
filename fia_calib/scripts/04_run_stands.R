@@ -3,11 +3,12 @@
 #> Purpose: Run all (filtered) FIA conditions ("stands") through FVS to generate 
 #> the dataset that will be used to fit the calibration model.
 #> 
-#> Outputs:
+#> Outputs: Database of FVS runs (fvs_kwd_files/FVSOut.db) and keyword files.
 #> 
 #> Notes:
 #>
 #> Data Sources: 
+#> - FIA data from FIA datamart
 #> 
 # ==============================================================================
 # Dependencies ----

@@ -1,15 +1,20 @@
 # DESCRIPTION ==================================================================
 #>
-#> Purpose: 
+#> Purpose: Prepare FIA stand and tree init data for running in FVS by:
+#> * Adding a "cycleat" column that reflects the year that FVS ought to project
+#> to i.e., the year after the first measurement
+#> * Match habitat types to IE-recognized ones and filter out unrecognized
+#>  habitat types
+#> * Filter out stands (conditions) that had only been measured once.
 #> 
-#> Outputs:
+#> Outputs: FVS-ready database: data/fvs_ready.db
 #> 
 #> Notes:
 #>
 #> Data Sources: 
 #> - FIA data
 #> https://research.fs.usda.gov/products/dataandtools/fia-datamart
-#> - PV Lookup tables from FVS-IE code, documented in rFVSIEtools/data-raw
+#> - PV/PA lookup tables from FVS-IE Variant Overview
 # ==============================================================================
 library(dplyr)
 library(ggplot2)
