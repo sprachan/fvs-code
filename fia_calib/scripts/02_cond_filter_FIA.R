@@ -66,7 +66,8 @@ for(i in seq_along(states)){
   DBI::dbDisconnect(conn)
 }
 
-fia_cond <- bind_rows(fia_cond_list)
+fia_cond <- bind_rows(fia_cond_list) |>
+  mutate(CID = paste0(PID, CONDID))
 
 # Condition distribution ----
 # most plots by far are 100% one-condition

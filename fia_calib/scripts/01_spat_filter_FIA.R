@@ -47,7 +47,6 @@
 # ==============================================================================
 
 # Dependencies ----
-library(rFVSIEtools)
 library(dplyr)
 library(sf)
 library(usmap)
@@ -154,19 +153,8 @@ variant_plot <- ggplot(variants)+
 variant_plot+
   geom_sf(data = ie_buffered, fill = 'grey', alpha = 0.5)
 
-# double check that the filtering worked by overlaying the outline of filtered
-#> FIA plots over the IE buffer
-variant_plot+
-  geom_sf(data = ie_buffered, fill = 'grey', alpha = 0.5)+
-  geom_sf(data = fia_outline, fill = 'blue', alpha = 0.5)
 
 ## FIA plots in context of contiguous US w states ----
-st_transform(us_map(exclude = c('HI', 'AK')), crs = st_crs(fia_outline)) |>
-  ggplot()+
-  geom_sf(fill = 'darkgrey')+
-  geom_sf(data = fia_outline, fill = 'blue', alpha = 0.5)+
-  geom_sf(data = ie, color = 'white', fill = rgb(1, 1, 1, 0.25), linetype = 'dashed')
-
 ggplot(fia_with_emap)+
   geom_sf(aes(fill = factor(N_MEAS), color = factor(N_MEAS)), alpha = 0.1, shape = 21)+
   geom_sf(data = st_transform(us_map(include = c('ID', 'WA', 'OR', 'MT')), crs = st_crs(fia_per_hex)),
@@ -215,15 +203,14 @@ sessionInfo()
 # [1] stats     graphics  grDevices utils     datasets  methods   base     
 # 
 # other attached packages:
-# [1] viridis_0.6.5          viridisLite_0.4.3      ggplot2_4.0.3          usmap_1.0.0            sf_1.1-1              
-# [6] dplyr_1.2.1            rFVSIEtools_0.0.0.9000
+# [1] viridis_0.6.5     viridisLite_0.4.3 ggplot2_4.0.3     usmap_1.0.0       sf_1.1-1          dplyr_1.2.1      
 # 
 # loaded via a namespace (and not attached):
-# [1] utf8_1.2.6         generics_0.1.4     class_7.3-23       KernSmooth_2.23-26 RSQLite_3.53.3     stringi_1.8.7     
-# [7] magrittr_2.0.5     grid_4.6.1         RColorBrewer_1.1-3 pkgload_1.5.3      fastmap_1.2.0      blob_1.3.0        
-# [13] e1071_1.7-17       DBI_1.3.0          gridExtra_2.3      purrr_1.2.2        scales_1.4.0       codetools_0.2-20  
-# [19] cli_3.6.6          rlang_1.3.0        dbplyr_2.6.0       units_1.0-1        bit64_4.8.2        withr_3.0.3       
-# [25] cachem_1.1.0       otel_0.2.0         tools_4.6.1        memoise_2.0.1      usmapdata_1.0.0    vctrs_0.7.3       
-# [31] R6_2.6.1           proxy_0.4-29       lifecycle_1.0.5    classInt_0.4-11    stringr_1.6.0      bit_4.6.0         
-# [37] pkgconfig_2.0.3    terra_1.9-34       pillar_1.11.1      gtable_0.3.6       glue_1.8.1         Rcpp_1.1.1-1.1    
-# [43] tibble_3.3.1       tidyselect_1.2.1   rstudioapi_0.18.0  farver_2.1.2       compiler_4.6.1     S7_0.2.2
+# [1] utf8_1.2.6         generics_0.1.4     class_7.3-23       KernSmooth_2.23-26 stringi_1.8.9      RSQLite_3.53.3    
+# [7] magrittr_2.0.5     grid_4.6.1         RColorBrewer_1.1-3 fastmap_1.2.0      blob_1.3.0         e1071_1.7-17      
+# [13] DBI_1.3.0          gridExtra_2.3      purrr_1.2.2        scales_1.4.0       codetools_0.2-20   cli_3.6.6         
+# [19] rlang_1.3.0        dbplyr_2.6.0       units_1.0-1        bit64_4.8.2        withr_3.0.3        cachem_1.1.0      
+# [25] otel_0.2.0         tools_4.6.1        memoise_2.0.1      usmapdata_1.0.0    vctrs_0.7.3        R6_2.6.1          
+# [31] proxy_0.4-29       lifecycle_1.0.5    classInt_0.4-11    stringr_1.6.0      bit_4.6.0          pkgconfig_2.0.3   
+# [37] terra_1.9-34       pillar_1.11.1      gtable_0.3.6       glue_1.8.1         Rcpp_1.1.1-1.1     tibble_3.3.1      
+# [43] tidyselect_1.2.1   rstudioapi_0.18.0  farver_2.1.2       labeling_0.4.3     compiler_4.6.1     S7_0.2.2 
