@@ -172,7 +172,10 @@ fvs_stand_init_out <- fvs_stand_init_filt |>
   rename(FIA_PV_REF = PV_REF_CODE, PV_CODE = HABCODE)
 
 fvs_tree_init_out <- fvs_tree_init_filt |>
-  inner_join(fvs_stand_init_out['STAND_CN'])
+  inner_join(fvs_stand_init_out['STAND_CN']) |>
+  select(-PLOT_CN, -TREE_CN, -TAG_ID, -DISTANCE, -SITE_TREE_FLAG,
+         -CRCLASS, -BH_YEARS, -CREATED_DATE, -MODIFIED_DATE, -VERSION,
+         -COND_STATUS_CD, -RESERVCD, -OWNCD, -CONDPROP_UNADJ, -PLOT)
 
 # Write stand and tree tables to SQLite database for FVS ease of access ----
 conn <- DBI::dbConnect(RSQLite::SQLite(), file.path('data', 'fvs_ready.db'))
