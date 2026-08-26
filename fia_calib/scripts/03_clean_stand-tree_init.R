@@ -61,28 +61,10 @@ for(i in seq_along(states)){
   DBI::dbDisconnect(conn)
 }
 
-fvs_stand_init <- bind_rows(fvs_stand_init_list) |>
-  select(-VARIANT) |>
-  group_by(CID) |>
-  mutate(N_REM_COND = n(),
-         cycleat = ifelse(N_REM_COND > 1, INV_YEAR[2], NA)) |>
-  ungroup() 
+fvs_stand_init <- bind_rows(fvs_stand_init_list) 
 fvs_tree_init <- bind_rows(fvs_tree_init_list)
-
 rm(fvs_stand_init_list, fvs_tree_init_list)
 
-# Filter tree and stand data to reduce FVS warnings and speed FVS run-times ----
-# FVS gives a warning if "too few projectable trees", so we can filter out
-#> stands that fall in that category to get more accurate stand sample size
-#> and speed things up.
-#> Also, only interested in large trees for now.
-
-fvs_tree_init_filt <- fvs_tree_init |>
-  filter(DIAMETER >= 3,
-         HISTORY == 1) |>
-  inner_join(distinct(fvs_stand_init['STAND_ID']))
-fvs_stand_init_filt <- fvs_stand_init |>
-  inner_join(distinct(fvs_tree_init_filt['STAND_ID'])) 
 
 # Clean-up habitat types ----
 # Goal: Minimize stands that run with default habitat types.
@@ -96,15 +78,22 @@ conn <- DBI::dbConnect(RSQLite::SQLite(), db_loc)
 ref_habtypes <- dplyr::tbl(conn, 'REF_HABTYP_DESCRIPTION') |>
   select(-CREATED_DATE, -MODIFIED_DATE) |>
   collect() |>
-  filter(HABTYPCD %in% fvs_stand_init$PV_FIA_HABTYPCD1,
-         VALID == 'Y') |>
   mutate(PLANT_ASSOC = is.na(as.integer(HABTYPCD)),
          habtyp_int = as.integer(HABTYPCD),
          habtyp_series = ifelse(habtyp_int >= 100&habtyp_int<1000,
                                 paste0(substr(habtyp_int, 1, 2), 0),
                                 habtyp_int),
-         COMMON_NAME = tolower(COMMON_NAME))
+         COMMON_NAME = tolower(COMMON_NAME),
+         # some common names have trailing parens like (blue mountains)
+         #> that we may not need
+         common_no_parens = gsub("\\s*\\([^)]*\\)\\s*$", "", COMMON_NAME))
 DBI::dbDisconnect(conn)
+
+ref_habtypes_nopub <- ref_habtypes |>
+  # COMMON_NAME and PUB_CD seem to similarly count the same habitat types
+  #> in different locations as being something different
+  select(-PUB_CD, -CN, -COMMON_NAME) |>
+  distinct()
 
 # habitat type tables from FVS-IE overview for finding recognized hab types
 ie_habtypes <- read.csv(file.path('raw_data', 'ie_habtypes.csv')) |>
@@ -128,74 +117,177 @@ ie_all <- ie_pas |>
   select(PA_CD, HABTYPCD) |>
   left_join(ie_habtypes) |>
   bind_rows(ie_habtypes) |>
-  mutate(gen_cd = ifelse(is.na(PA_CD),HABTYPCD, PA_CD))
+  # need to have a column that has habitat type regardless of if it's a PA
+  #> code or a PV code.
+  mutate(gen_cd = ifelse(is.na(PA_CD), HABTYPCD, PA_CD))
 
 ## Find matching habitat types ----
-# which habitat types in the FIA data have PV/PA codes matching FVS-IE tables?
-fia_hab <- fvs_stand_init_filt |>
-  ungroup() |>
+# match all PV/PV Ref combos in the FIA data
+fia_hab_ref <- fvs_stand_init |>
   select(PV_FIA_HABTYPCD1, PV_REF_CODE) |>
+  filter(!is.na(PV_REF_CODE)) |>
   mutate(PV_REF_CODE = as.character(PV_REF_CODE))|>
   distinct() |>
+  # there's one row that has both codes undefined which is useless to us
   filter(!(is.na(PV_REF_CODE)&is.na(PV_FIA_HABTYPCD1))) |>
   left_join(ref_habtypes, by = join_by(PV_FIA_HABTYPCD1 == HABTYPCD,
                                        PV_REF_CODE == PUB_CD)) |>
   mutate(ie_recognized = case_when(PLANT_ASSOC == FALSE ~ habtyp_series %in% ie_habtypes$HABTYPCD,
                                    PLANT_ASSOC == TRUE ~ PV_FIA_HABTYPCD1 %in% ie_pas$PA_CD))
+# match all PV-only codes
+fia_hab_noref <- fvs_stand_init |>
+  select(PV_FIA_HABTYPCD1, PV_REF_CODE) |>
+  filter(is.na(PV_REF_CODE)) |>
+  distinct() |>
+  # there's one row that has both codes undefined which is useless to us
+  filter(!(is.na(PV_REF_CODE)&is.na(PV_FIA_HABTYPCD1))) |>
+  left_join(ref_habtypes_nopub, by = join_by(PV_FIA_HABTYPCD1 == HABTYPCD)) |>
+  mutate(ie_recognized = case_when(PLANT_ASSOC == FALSE ~ habtyp_series %in% ie_habtypes$HABTYPCD,
+                                   PLANT_ASSOC == TRUE ~ PV_FIA_HABTYPCD1 %in% ie_pas$PA_CD),
+         PV_REF_CODE = as.character(NA))
 
-# if there's a PV/PA code match, use the associated IE habitat code (left-most column)
+fia_hab <- bind_rows(fia_hab_ref, fia_hab_noref)
+
+# if there was a PV code match with an IE hab code, use the IE habitat code 
+#> ie., left-most column in variant overview tables 11.1.1 and 11.1.2
 code_match <- fia_hab |>
   filter(ie_recognized) |>
+  # use the rounded habitat type instead of phase because that's what's in 11.1.1
   mutate(join_key = ifelse(PLANT_ASSOC, PV_FIA_HABTYPCD1, habtyp_series)) |>
   left_join(ie_all[c('gen_cd', 'IE_HABTYP')], by = join_by(join_key == gen_cd)) |>
+  # because some PA codes aren't recognized, fill in with the matching numeric
+  #> code
   mutate(HABCODE = ifelse(PLANT_ASSOC, IE_HABTYP, PV_FIA_HABTYPCD1))
-# otherwise, match by scientific name/abbreviation
+
+# otherwise, attempt to match by scientific name/abbreviation
 abb_match <- fia_hab |>
-  filter(!ie_recognized) |>
-  select(PV_FIA_HABTYPCD1, PV_REF_CODE, FIA_SCI = SCIENTIFIC_NAME, COMMON_NAME) |>
-  # due to nomenclature changes, some sci names in FIA don't quite match FVS-IE 
-  #> sci names; and all FVS-IE sci names omit any trailing numbers i.e., 
-  #> ABGR/LIBO3 is recorded in the overview as ABGR/LIBO. Hence the substring.
-  mutate(abbr_ie = case_when(FIA_SCI == 'PSME/PSSPS' ~ 'PSME/AGSP',
-                             FIA_SCI == 'PIPO/PSSPS' ~ 'PIPO/AGSP',
-                             FIA_SCI == 'ABLA/LUGLH' ~ 'ABLA/LUHI',
-                             FIA_SCI == 'ABLA/ALVIS' ~ 'ABLA/ALSI',
+  filter(!ie_recognized|is.na(ie_recognized), !is.na(SCIENTIFIC_NAME)) |>
+  select(PV_FIA_HABTYPCD1, PV_REF_CODE, FIA_SCI = SCIENTIFIC_NAME,
+         common_no_parens) |>
+  # some sci names in FIA don't quite match FVS-IE sci names:
+  mutate(abbr_ie = case_when(substr(FIA_SCI, 1, 10) == 'PSME/PSSPS' ~ 'PSME/AGSP',
+                             substr(FIA_SCI, 1, 10) == 'PIPO/PSSPS' ~ 'PIPO/AGSP',
+                             substr(FIA_SCI, 1, 10) == 'ABLA/LUGLH' ~ 'ABLA/LUHI',
+                             substr(FIA_SCI, 1, 10) == 'ABLA/ALVIS' ~ 'ABLA/ALSI',
+                             grepl('-.*/', FIA_SCI) ~ NA,
                              .default = substr(FIA_SCI, 1, 9))) |>
-  filter(abbr_ie != 'ABLA') |> # there are two diff ABLA series and I can't tell which this is supposed to be
+  # there are two diff ABLA series and I can't tell which this is supposed to be
+  #> from FIA database alone
+  filter(FIA_SCI != 'ABLA') |> 
   left_join(ie_habtypes, by = join_by(abbr_ie == SCIENTIFIC_NAME)) |>
+  # assign series if the dominant tree is listed as a series in 11.1.1
   mutate(FILLED_IE_HABTYP = case_when(is.na(IE_HABTYP) & substr(abbr_ie, 1, 4) == 'ABGR' ~ 500,
                                       is.na(IE_HABTYP) & substr(abbr_ie, 1, 4) == 'PSME' ~ 260,
                                       is.na(IE_HABTYP) & substr(abbr_ie, 1, 5) == 'PICEA' ~ 420,
                                       is.na(IE_HABTYP) & substr(abbr_ie, 1, 5) == 'PIEN/' ~ 410,
                                       is.na(IE_HABTYP) & abbr_ie == 'PIEN' ~ 400,
-                                      is.na(IE_HABTYP) & substr(abbr_ie, 1, 4) == 'PICO' ~ 900,
+                                      is.na(IE_HABTYP) & substr(abbr_ie, 1, 5) == 'PICO/' ~ 900,
                                       is.na(IE_HABTYP) & substr(abbr_ie, 1, 4) == 'PIPO' ~ 100,
                                       .default = IE_HABTYP),
+         # retain original habitat type code unless it needed to be a series
          HABCODE = ifelse(is.na(HABTYPCD), FILLED_IE_HABTYP, HABTYPCD)) |>
+  # don't need to keep rows that have no IE habitat translation
   filter(!is.na(FILLED_IE_HABTYP))
 
 hab_key <- bind_rows(code_match, abb_match) |>
-  mutate(HABCODE = ifelse(is.na(HABCODE), FILLED_IE_HABTYP, HABCODE))
+  select(PV_FIA_HABTYPCD1, PV_REF_CODE, HABCODE) |>
+  distinct()
 
-# Create cleaned-up output tables ---
-fvs_stand_init_out <- fvs_stand_init_filt |>
-  mutate(PV_REF_CODE = as.character(PV_REF_CODE)) |>
-  left_join(hab_key[c('HABCODE', 'PV_REF_CODE', 'PV_FIA_HABTYPCD1')]) |>
-  filter(!is.na(HABCODE), N_REM_COND > 1) |>
+# Filter stands ----
+fia_has_hab <- fvs_stand_init |>
+  select(PID, CID, PV_FIA_HABTYPCD1, PV_REF_CODE, INV_YEAR) |>
+  group_by(CID) |>
+  arrange(INV_YEAR) |>
+  mutate(PV_REF_CODE = as.character(PV_REF_CODE),
+         REM_CD_COND = row_number()) |>
+  left_join(hab_key) |>
+  # get condition IDs for conditions w IE-recognized habitat type in first
+  #> measurement
+  filter(REM_CD_COND == 1,
+         !is.na(HABCODE)) |>
+  pull(CID) |>
+  unique()
+
+fvs_stand_init_filt <- fvs_stand_init |>
+  group_by(CID) |>
+  arrange(CID, INV_YEAR) |>
+  mutate(PV_REF_CODE = as.character(PV_REF_CODE),
+         N_MEAS_COND = n(),
+         REM_CD_COND = row_number()) |>
+  ungroup() |>
+  left_join(hab_key) |>
+  # remove stands with non-translatable habitat types
+  filter(N_MEAS_COND > 1, CID %in% fia_has_hab) |>
+  # drop columns that won't be processed by FVS; use translated habitat codes
   select(-ADDFILES, -COMPARTMENT, -CREATED_DATE, -DATUM, -ELEVATION, 
          -FOREST_TYPE, -FOREST_TYPE_FIA, -FVSKEYWORDS, -GIS_LINK, -GROUPS,
          -INVYR, -MAX_SDI, -MODEL_TYPE, -MODIFIED_DATE, -PHOTO_CODE,
          -PHOTO_REF, -VERSION, -PV_CODE) |>
-  rename(FIA_PV_REF = PV_REF_CODE, PV_CODE = HABCODE)
+  rename(FIA_PV_REF = PV_REF_CODE, PV_CODE = HABCODE) |>
+  mutate(STAND_ID = CID)
+stopifnot(nrow(fvs_stand_init_filt) == length(unique(fvs_stand_init_filt$STAND_CN)))
 
-fvs_tree_init_out <- fvs_tree_init_filt |>
-  inner_join(fvs_stand_init_out['STAND_CN']) |>
-  select(-PLOT_CN, -TREE_CN, -TAG_ID, -DISTANCE, -SITE_TREE_FLAG,
-         -CRCLASS, -BH_YEARS, -CREATED_DATE, -MODIFIED_DATE, -VERSION,
-         -COND_STATUS_CD, -RESERVCD, -OWNCD, -CONDPROP_UNADJ, -PLOT)
+fvs_trees_all <- fvs_tree_init |>
+  select(-STAND_ID) |>
+  # exclude seedlings
+  filter(DIAMETER > 0.1) |>
+  # only keep trees associated with retained stands
+  inner_join(distinct(fvs_stand_init_filt[c('STAND_CN', 'STAND_ID', 'INV_YEAR')])) |>
+  # drop unnecessary columns
+  select(-STANDPLOT_CN, -TAG_ID, -DISTANCE, -SITE_TREE_FLAG, 
+         -PV_CODE, -PV_REF_CODE, -BH_YEARS,
+         -CREATED_DATE, -MODIFIED_DATE, -VERSION, -PLT_CN, -CONDID,
+         -COND_STATUS_CD, -RESERVCD, -OWNCD, -CONDPROP_UNADJ, -PROP_BASIS,
+         -INVYR) |>
+  mutate(FIA_TREE_ID = TREE_ID,
+         PLT_NUM = substr(STANDPLOT_ID, nchar(STANDPLOT_ID), nchar(STANDPLOT_ID)),
+         TUID = paste0(PID, PLT_NUM, TREE_ID)) |>
+  select(-TREE_ID)
+stopifnot(nrow(fvs_trees_all) == length(unique(fvs_trees_all$TREE_CN)))
+
+# Filter trees ----
+## Check for mismatched species ----
+# Presumably due to measurement error (though I'm worried it's because the 
+#> tree unique identifier is in fact not unique...)
+sp_mismatches <- fvs_trees_all |>
+  group_by(TUID) |>
+  arrange(INV_YEAR) |>
+  mutate(N_MEAS_TRE = n(),
+         REM_CD_TRE = row_number(),
+         INV_YEAR = as.character(INV_YEAR)) |>
+  filter(N_MEAS_TRE >= 2) |>
+  select(TUID, SPECIES, REM_CD_TRE, INV_YEAR) |>
+  tidyr::pivot_wider(names_from = REM_CD_TRE, values_from = c(SPECIES, INV_YEAR)) |>
+  mutate(match12 = SPECIES_1 == SPECIES_2,
+         match23 = SPECIES_2 == SPECIES_3, 
+         match13 = SPECIES_1 == SPECIES_3) |>
+  filter(!match12|!match23|!match13) # if there was ever any disagreement, omit
+
+## Assign TREE_IDs that can be mapped to TUID ----
+tree_id_key <- fvs_trees_all |>
+  filter(!TUID %in% sp_mismatches$TUID) |>
+  select(PID, TUID) |>
+  distinct() |>
+  group_by(PID) |>
+  arrange(TUID) |>
+  mutate(TREE_ID = row_number()) |>
+  ungroup() 
+stopifnot(nrow(tree_id_key) == length(unique(tree_id_key$TUID)))
+
+## Final tree output ----
+fvs_tree_init_out <- fvs_trees_all |>
+  left_join(tree_id_key) |>
+  filter(REM_CD == 1,
+         !TUID %in% sp_mismatches$TUID)
+stopifnot(nrow(fvs_tree_init_out) == length(unique(fvs_tree_init_out$TREE_CN)))
+stopifnot(nrow(fvs_tree_init_out) == length(unique(fvs_tree_init_out$TUID)))
 
 # Write stand and tree tables to SQLite database for FVS ease of access ----
 conn <- DBI::dbConnect(RSQLite::SQLite(), file.path('data', 'fvs_ready.db'))
-DBI::dbWriteTable(conn, name = 'FVS_StandInit', value = fvs_stand_init_out, overwrite = TRUE)
-DBI::dbWriteTable(conn, name = 'FVS_TreeInit', value = fvs_tree_init_filt, overwrite = TRUE)
+DBI::dbWriteTable(conn, name = 'FVS_StandInit', value = fvs_stand_init_filt, overwrite = TRUE)
+DBI::dbWriteTable(conn, name = 'FVS_TreeInit', value = fvs_tree_init_out, overwrite = TRUE)
+DBI::dbWriteTable(conn, name = 'FIA_allTrees', 
+                  value = filter(fvs_trees_all,
+                                 !TUID %in% sp_mismatches$TUID), overwrite = TRUE)
+DBI::dbWriteTable(conn, name = 'Tree_ID_KEY', value = tree_id_key, overwrite = TRUE)
 DBI::dbDisconnect(conn)
