@@ -1,20 +1,37 @@
 # DESCRIPTION ==================================================================
 #>
 #> Purpose: Prepare FIA stand and tree init data for running in FVS by:
+#> ********* Stand Tables ***********
+#> * Matching habitat types to IE-recognized ones
+#> * Filtering out stands (conditions) with IE-unrecognized habitat types in 
+#>   their first measurement
+#> * Filtering out stands (conditions) that had only been measured once
 #> * Adding a "cycleat" column that reflects the year that FVS ought to project
-#> to i.e., the year after the first measurement
-#> * Match habitat types to IE-recognized ones and filter out unrecognized
-#>  habitat types
-#> * Filter out stands (conditions) that had only been measured once.
+#>   to i.e., the measurement year after the first measurement
+#> * Replacing STAND_ID values (see def in FIA2FVS document) with CID to improve
+#>   post-run processing.
 #> 
-#> Outputs: FVS-ready database: data/fvs_ready.db
+#>   
+#> ********* Tree Tables ***********
+#> * Removing trees whose species ID changed between measurements
+#> * Removing seedlings, AKA trees with <= 0.1" diameter
+#> * Only keeping trees that are in stands that made it through the filtering
+#>   process
+#> * Creating a dataframe that allows PID/TUID combos to be mapped to integer
+#>   FVS tree IDs.
 #> 
-#> Notes:
+#> Outputs: FVS-ready database: data/fvs_ready.db, which contains:
+#> * FVS_StandInit: Filtered stands
+#> * FVS_TreeInit: First measurement of filtered trees
+#> * FVS_allTrees: All measurements of filtered trees
+#> * Tree_ID_KEY: Links PID/TUID combinations to integer FVS tree IDs
+#> 
+#> Notes: fvs_ready.db/FVS_StandInit.STAND_ID == CID
 #>
 #> Data Sources: 
 #> - FIA data
 #> https://research.fs.usda.gov/products/dataandtools/fia-datamart
-#> - PV/PA lookup tables from FVS-IE Variant Overview
+#> - PV/PA lookup tables from FVS-IE Variant Overview (Appendix tables 11.1.1 and 11.1.2)
 # ==============================================================================
 library(dplyr)
 library(ggplot2)
@@ -68,10 +85,10 @@ fvs_stand_init_filt <- fvs_stand_init |>
   inner_join(distinct(fvs_tree_init_filt['STAND_ID'])) 
 
 # Clean-up habitat types ----
-# This is necessary because I've seen some habitat types that ought to be
-#> recognized by IE "fall through the cracks" presumably due to region-specific
-#> PA/PV codes that nonetheless refer to the same habitat types. I want to
-#> minimize the number of stands that are run using default habitat type.
+# Goal: Minimize stands that run with default habitat types.
+#> Some habitat types that ought to be recognized by IE "fall through the cracks" 
+#> presumably due to region-specific codes that nonetheless refer to the same 
+#> habitat types.
 
 ## Get relevant data ----
 # Read in reference table so we can connect PV/PA codes to scientific names
