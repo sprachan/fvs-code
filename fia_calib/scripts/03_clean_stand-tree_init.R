@@ -19,6 +19,7 @@
 #>   process
 #> * Creating a dataframe that allows PID/TUID combos to be mapped to integer
 #>   FVS tree IDs.
+#> * Adjusting tree counts to per-acre basis if condition proportion changed
 #> 
 #> Outputs: FVS-ready database: data/fvs_ready.db, which contains:
 #> * FVS_StandInit: Filtered stands
@@ -237,7 +238,7 @@ fvs_trees_all <- fvs_tree_init |>
   select(-STANDPLOT_CN, -TAG_ID, -DISTANCE, -SITE_TREE_FLAG, 
          -PV_CODE, -PV_REF_CODE, -BH_YEARS,
          -CREATED_DATE, -MODIFIED_DATE, -VERSION, -PLT_CN, -CONDID,
-         -COND_STATUS_CD, -RESERVCD, -OWNCD, -CONDPROP_UNADJ, -PROP_BASIS,
+         -COND_STATUS_CD, -RESERVCD, -OWNCD, -CONDPROP_UNADJ, 
          -INVYR) |>
   mutate(FIA_TREE_ID = TREE_ID,
          PLT_NUM = substr(STANDPLOT_ID, nchar(STANDPLOT_ID), nchar(STANDPLOT_ID)),
@@ -274,13 +275,60 @@ tree_id_key <- fvs_trees_all |>
   ungroup() 
 stopifnot(nrow(tree_id_key) == length(unique(tree_id_key$TUID)))
 
+## Look at tree count mismatches ----
+count_mismatch <- fvs_trees_all |>
+  ungroup() |>
+  select(TUID, CID, REM_CD, TREE_COUNT, N_MEAS,condprop1_round, condprop2_round, 
+         PROP_BASIS, condprop_diff) |>
+  filter(REM_CD <= 2, N_MEAS >= 2) |>
+  tidyr::pivot_wider(names_from = REM_CD,
+                     values_from = TREE_COUNT,
+                     names_prefix = 'count') |>
+  filter(!is.na(count1), !is.na(count2), count1 != count2) |>
+  relocate(count1, .before = count2) |>
+  mutate(area_basis = ifelse(PROP_BASIS == 'SUBP', 1/24, 1/4))
+
+count_mismatch # 16,435 trees, ~ 4% of all trees
+## Trees that shrunk ----
+trees_yy <- fvs_trees_all |>
+  ungroup() |>
+  select(TUID, CID, REM_CD, DIAMETER, HT, N_MEAS, HISTORY) |>
+  filter(REM_CD <= 2, N_MEAS >= 2) |>
+  tidyr::pivot_wider(names_from = REM_CD,
+                     values_from = c(DIAMETER, HT, HISTORY)) |>
+  filter(!is.na(DIAMETER_1), !is.na(HT_1)) |>
+  mutate(DG = DIAMETER_2-DIAMETER_1,
+         HG = HT_2-HT_1)
+diam_shrunk <- trees_yy |>
+  filter(HISTORY_1 == 1, HISTORY_2 == 1, DG < 0) 
+nrow(diam_shrunk) # 1227 trees
+hist(diam_shrunk$DG, breaks = seq(-60, 0, by = 5))
+diam_shrunk[which.min(diam_shrunk$DG),]
+
+height_shrunk <- trees_yy |>
+  filter(HISTORY_1 == 1, HISTORY_2 == 1, HG < 0)
+hist(height_shrunk$HG, breaks = seq(-60, 0, by = 1))
+nrow(height_shrunk) # 6017 trees
+
+diam_rm <- trees_yy$TUID[trees_yy$DG < 0]
+ht_rm <- trees_yy$TUID[trees_yy$HG < -10]
+
 ## Final tree output ----
 fvs_tree_init_out <- fvs_trees_all |>
   left_join(tree_id_key) |>
   filter(REM_CD == 1,
-         !TUID %in% sp_mismatches$TUID)
+         !TUID %in% sp_mismatches$TUID,
+         !TUID %in% diam_rm,
+         !TUID %in% ht_rm)
 stopifnot(nrow(fvs_tree_init_out) == length(unique(fvs_tree_init_out$TREE_CN)))
 stopifnot(nrow(fvs_tree_init_out) == length(unique(fvs_tree_init_out$TUID)))
+
+# Look at how many stands and trees we kept at this step ----
+
+100*(length(unique(fvs_stand_init_filt$STAND_ID))/length(unique(fvs_stand_init$CID)))
+# kept 96% of all input stands
+100*(length(unique(fvs_tree_init_out$TUID))/length(unique(fvs_trees_all$TUID)))
+# kept 75% of all input trees
 
 # Write stand and tree tables to SQLite database for FVS ease of access ----
 conn <- DBI::dbConnect(RSQLite::SQLite(), file.path('data', 'fvs_ready.db'))
@@ -288,6 +336,8 @@ DBI::dbWriteTable(conn, name = 'FVS_StandInit', value = fvs_stand_init_filt, ove
 DBI::dbWriteTable(conn, name = 'FVS_TreeInit', value = fvs_tree_init_out, overwrite = TRUE)
 DBI::dbWriteTable(conn, name = 'FIA_allTrees', 
                   value = filter(fvs_trees_all,
-                                 !TUID %in% sp_mismatches$TUID), overwrite = TRUE)
+                                 !TUID %in% sp_mismatches$TUID,
+                                 !TUID %in% diam_rm,
+                                 !TUID %in% ht_rm), overwrite = TRUE)
 DBI::dbWriteTable(conn, name = 'Tree_ID_KEY', value = tree_id_key, overwrite = TRUE)
 DBI::dbDisconnect(conn)
