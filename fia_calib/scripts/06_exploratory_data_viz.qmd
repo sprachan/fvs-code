@@ -1,0 +1,971 @@
+---
+title: "Exploratory Data Analysis"
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+    code-summary: "Code to generate figure"
+    df-print: kable
+execute:
+  code-fold: true
+---
+
+## Setup
+First, packages.
+
+```{r}
+#| label: packages
+#| code-fold: false
+#| collapse: true
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(sf)
+library(usmap)
+library(here)
+```
+And some custom plotting functions.
+
+```{r}
+#| label: functions
+#| code-fold: false
+
+plot_tpa_dist <- function(data, dist_var, tpa_var, ..., bins = 10){
+  dv <- pull(data, {{dist_var}})
+  dots <- rlang::enquos(...)
+  stopifnot(length(dots) <= 1)
+  if(length(dots) == 0){
+    breaks <- seq(0, ceiling(max(dv)), length.out = bins)
+    plt_dat <- select(data, {{dist_var}}, {{tpa_var}}) |>
+      mutate(bin = cut({{dist_var}}, breaks = breaks, ordered_result = TRUE)) |>
+      summarize(n_trees = sum({{tpa_var}}), .by = bin)
+    p <- ggplot(plt_dat, aes(x = bin, y = n_trees))+
+      geom_col()
+  }else{
+    plt_dat <- data |>
+      group_by(...) |>
+      mutate(bin = cut({{dist_var}},
+                       breaks = seq(0, 
+                                    ceiling(max({{dist_var}})), 
+                                    length.out = bins)),
+             bin = forcats::fct_reorder(bin, {{dist_var}})) |>
+      ungroup() |>
+      
+      group_by(bin, ...) |>
+      summarize(n_trees = sum({{tpa_var}}))
+    p <- ggplot(plt_dat, aes(x = bin, y = n_trees, fill = !!dots[[1]]))+
+      geom_col()
+  }
+  p
+}
+```
+
+### Error data
+
+In addition to reading in the data, I calculate trees per acre. This depends on whether the tree was measured in a subplot, microplot, or macroplot. 
+
+```{r}
+#| label: read-error-data
+#| code-fold: false
+
+trees_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |>
+  filter(calib_use) |>
+  mutate(macro = NUM_PLOTS != 4,
+         TPA_1 = case_when(fia_dbh_1 < 5 ~ 74.965282,
+                           !macro&fia_dbh_1 >= 5 ~ 6.018046,
+                           macro&fia_dbh_1 >= 5 ~ 0.999188,
+                           .default = NA),
+         TPA_2 = case_when(fia_dbh_2 < 5 ~ 74.965282,
+                           !macro&fia_dbh_2 >= 5 ~ 6.018046,
+                           macro&fia_dbh_2 >= 5 ~ 0.999188,
+                           .default = NA))
+head(trees_err)
+```
+
+Instead of going with the default alphabetical factor ordering, I'll order the "species" factor in the dataframe in order of species prevalence.
+
+```{r}
+#| label: species-factor
+#| code-fold: false
+
+sp_table <- sort(table(trees_err$common_name), decreasing = TRUE)
+knitr::kable(sp_table, col.names = c('Species', 'Frequency'))
+trees_err$common_name <- factor(trees_err$common_name, 
+                                levels = names(sp_table),
+                                ordered = TRUE)
+sp_group_table <- sort(table(trees_err$fvs_sp_group), decreasing = TRUE)
+trees_err$fvs_sp_group <- factor(trees_err$fvs_sp_group, 
+                                 levels = names(sp_group_table),
+                                 ordered = TRUE)
+```
+
+I'll also define 4 study species to focus on. Douglas-fir is the most common species in the study region, it's widespread, and it's commercially important (though perhaps more so in the PNW than the inland northwest). Lodgepole pine is also quite common, and it spans an elevational gradient, which makes it a useful case study to look at some elevational effects. Western larch is more specialized to somewhat wetter areas. Finally, ponderosa pine is more restricted to dry sites than the other species, so trends in FVS' PIPO accuracy may give some insight into dry site accuracy.
+
+```{r}
+#| label: def-study-sp
+#| code-fold: false
+study_sps <- c('Douglas-fir', 'lodgepole pine', 
+               'western larch',  'ponderosa pine')
+```
+
+The initial tree dataframe is structured where every row is a tree. However, sometimes we may want to instead look at error at the species-within-stand level, and sometimes just at the stand level. I took the median of all metrics because they are quite skewed, so the mean is not as accurate a representation of the center of the distribution. The `matched_by` column describes how the habitat type was matched.
+
+```{r}
+#| label: stand-err
+#| collapse: true
+#| code-fold: false
+
+stand_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |>
+  filter(!died, !broke, !started_broken) |>
+  group_by(CID) |>
+  summarize(med_dbh1 = median(fia_dbh_1),
+            med_ht1 = median(fia_ht_1),
+            med_dbh2 = median(fia_dbh_2),
+            med_ht2 = median(fia_ht_2),
+            fia_dg = median(fia_dg),
+            fia_hg = median(fia_hg),
+            fia_bag = median(fia_bag),
+            dg_err = median(dg_err),
+            hg_err = median(hg_err),
+            ba_err = median(ba_err)) |>
+  ungroup() |>
+  # want to get plot information back
+  left_join(distinct(trees_err[c('CID', 'LATITUDE', 'LONGITUDE',
+                                 'EMAP_HEX',  'LOCATION', 'ECOREGION', 
+                                 'AGE', 'ASPECT', 'SLOPE', 'ELEVFT', 'PV_CODE', 
+                                 'dominant_sp', 'matched_by')]))
+head(stand_err)
+
+stand_sp_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |>
+  filter(!died, !broke, !started_broken) |>
+  group_by(CID, fvs_sp, common_name) |>
+  summarize(med_dbh1 = median(fia_dbh_1),
+            med_ht1 = median(fia_ht_1),
+            med_dbh2 = median(fia_dbh_2),
+            med_ht2 = median(fia_ht_2),
+            fia_dg = median(fia_dg),
+            fia_hg = median(fia_hg),
+            fia_bag = median(fia_bag),
+            dg_err = median(dg_err, na.rm = TRUE),
+            hg_err = median(hg_err),
+            ba_err = median(ba_err)) |>
+  ungroup() |>
+  # want to get plot information back
+  left_join(distinct(trees_err[c('CID', 'LATITUDE', 'LONGITUDE',
+                                 'EMAP_HEX',  'LOCATION', 'ECOREGION', 
+                                 'AGE', 'ASPECT', 'SLOPE', 'ELEVFT', 'PV_CODE', 
+                                 'dominant_sp', 'matched_by')]))
+head(stand_sp_err)
+```
+
+Finally, a color palette:
+
+```{r}
+#| label: color-pal
+#| code-fold: false
+spectral_plus <- c(RColorBrewer::brewer.pal(11, 'Spectral'), '#aaa', '#aaa')
+```
+
+### Spatial Data
+
+This is primarily for context when mapping.
+
+```{r}
+#| label: read-spatial
+#| code-fold: false
+#| collapse: true
+
+variants <- here('raw_data', 'FVSVariantMap20210525', 
+                         'FVS_Variants_and_Locations.shp') |>
+  st_read() |>
+  filter(FVSVariant != 'AK') |>
+  mutate(ie_locs = factor(ifelse(FVSVariant == 'IE'|FVSVariant == 'EM', FVSLocName, NA))) |>
+  group_by(ie_locs, FVSVariant) |>
+  summarize() |>
+  ungroup()
+
+ie <- filter(variants, FVSVariant == 'IE') |>
+  select(geometry) |>
+  summarize()
+
+ie_buffered <- st_buffer(ie, dist = 100*1000) |>
+  st_intersection(variants) |># don't want to go up into Canada
+  summarize() |>
+  st_convex_hull()
+epa_hexes <- st_read(here('raw_data', 
+                          'FIA_Forest_Biomass_Estimates_1873',
+                          'data',
+                          'CONUSbiohex2020.shp')) |>
+  select(EMAP_HEX, geometry) |>
+  st_transform(crs = st_crs(variants))
+
+ie_hexes <- epa_hexes |>
+  st_filter(ie_buffered,
+            .predicate = st_intersects)
+
+states <- usmap::us_map(regions = 'states', include = c('ID', 'MT', 'OR', 'WA')) |>
+  st_transform(crs = st_crs(ie_buffered))
+```
+
+And the locations of a few towns/cities for context.
+
+```{r}
+#| code-fold: false
+missoula <- st_as_sf(data.frame(lat = 46.872890, lon = -114.004997),
+                     coords = c('lon', 'lat'),
+                     crs = 'epsg:4326')
+spokane <- st_as_sf(data.frame(lat = 47.658779, lon = -117.436048),
+                    coords = c('lon', 'lat'),
+                    crs = 'epsg:4326')
+moscow <- st_as_sf(data.frame(lat = 46.731705, lon = -116.999939),
+                  coords = c('lon', 'lat'),
+                  crs = 'epsg:4326')
+```
+
+## Sample Information
+
+The first set of graphics will explore the distribution of the data in various ways.
+
+### Species composition
+
+```{r}
+#| label: species_comp
+
+trees_err |>
+  ggplot()+
+  geom_bar(aes(x = fvs_sp_group, fill = fvs_sp_group), color = 'darkgrey')+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.2),
+        legend.position = 'bottom')+
+  labs(x = 'Species group', y = 'Number of trees', fill = 'Species group')+
+  scale_fill_manual(values = spectral_plus)
+```
+Pines are the most common genus. Douglas-firs are next, then true firs. These three groups dominate the data.
+
+```{r}
+#| code-fold: false
+#| echo: false
+ggsave(here('figures', 'all-IE_species_dist.png'),
+       width = 8, height = 4, units = 'in')
+```
+
+```{r}
+trees_err |>
+  mutate(state = case_when(substr(CID, 1, 2) == 16 ~ 'Idaho',
+                           substr(CID, 1, 2) == 30 ~ 'Montana',
+                           substr(CID, 1, 2) == 41 ~ 'Oregon',
+                           substr(CID, 1, 2) ==  53 ~ 'Washington')) |>
+  ggplot()+
+  geom_bar(aes(x = state, fill = fvs_sp_group), color = 'darkgrey')+
+  scale_fill_manual(values = spectral_plus)+
+  theme_bw()+
+  labs(x = 'State', y = 'Number of trees', fill = 'Species group')
+```
+Splitting it out by state, most trees come from Montana and Idaho (which makes sense considering that the IE variant covers mostly these two states and only a small bit of WA). Idaho has a larger proportion of spruce and cedar, perhaps reflecting the more moist climate of the Idaho panhandle. Montana has more pine and Doug fir.
+
+```{r}
+#| code-fold: false
+#| echo: false
+ggsave(here('figures', 'all-IE_trees_per_state.png'),
+       width = 8, height = 4, units = 'in')
+```
+
+### DBH and Height Distributions
+
+```{r}
+#| label: dbh-dist
+ggplot(trees_err)+
+  geom_histogram(aes(x = fia_dbh_1), color = 'darkgrey', bins = 16)+
+  theme_bw()+
+  labs(x = 'Initial DBH', y = 'Number of trees')+
+plot_tpa_dist(trees_err, fia_dbh_1, TPA_1, bins = 16)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))+
+  labs(x = 'Initial DBH',
+       y = 'TPA')
+```
+Initial DBH distribution is skewed as expected; correcting # of trees to TPA makes the J-shape a bit clearer though sort of wipes out the big trees. The left panel more accurately represents the sample we have for FVS; the right panel maybe more accurately represents what the FIA sample tells us about tree DBH distributions across the region.
+
+```{r}
+#| echo: false
+#| output: false
+trees_err |>
+  ggplot()+
+  geom_histogram(aes(x = fia_dbh_1), color = 'darkgrey')+
+  theme_bw()+
+  labs(x = 'Initial DBH', y = 'Number of trees')
+ggsave(here('figures', 'all-IE_initial_dbh_dists.png'),
+       width = 6, height = 4, units = 'in')
+```
+
+```{r}
+#| label: height-dist
+
+ggplot(trees_err)+
+  geom_histogram(aes(x = fia_ht_1), color = 'darkgrey', bins = 18)+
+  theme_bw()+
+  labs(x = 'Initial Height', y = 'Number of trees')+
+plot_tpa_dist(trees_err, fia_ht_1, TPA_1, bins = 10)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))+
+  labs(x = 'Initial Height',
+       y = 'TPA')
+```
+As with DBH, this is not unexpected and the TPA expansion reflects more of an "on-the-ground" translation of FIA data than how it'll show up in our FVS error investigation.
+
+```{r}
+#| echo: false
+#| output: false
+trees_err |>
+  ggplot()+
+  geom_histogram(aes(x = fia_ht_1), color = 'darkgrey')+
+  theme_bw()+
+  labs(x = 'Initial Height', y = 'Number of trees')
+ggsave(here('figures', 'all-IE_initial_ht_dists.png'),
+       width = 6, height = 4, units = 'in')
+```
+
+#### Study species only
+
+```{r}
+#| label: study-sp-dbh
+#| collapse: true
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  ggplot()+
+  geom_histogram(aes(x = fia_dbh_1, fill = common_name), color = 'darkgrey')+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  labs(x = 'Initial DBH', y = 'Number of trees', fill = 'Species')+
+  theme_bw()+
+  theme(legend.position = 'bottom')+
+  scale_fill_brewer(palette = 'Dark2')
+  
+plot_tpa_dist(filter(trees_err, common_name %in% study_sps),
+                fia_dbh_1, TPA_1, common_name, bins = 20)+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  labs(x = 'Initial DBH', y = 'TPA', fill = 'Species')+
+  theme_bw()+
+  theme(legend.position = 'bottom',
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 6))+
+  scale_fill_brewer(palette = 'Dark2')
+```
+All study species have pretty similar initial DBH curves as the whole sample, though lodgepole has fewer little guys.
+
+```{r}
+#| label: study-sp-height
+#| collapse: true
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  ggplot()+
+  geom_histogram(aes(x = fia_ht_1, fill = common_name), color = 'darkgrey')+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  labs(x = 'Initial DBH', y = 'Number of trees', fill = 'Species')+
+  theme_bw()+
+  theme(legend.position = 'bottom')+
+  scale_fill_brewer(palette = 'Dark2')
+  
+plot_tpa_dist(filter(trees_err, common_name %in% study_sps),
+                fia_ht_1, TPA_1, common_name, bins = 15)+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  labs(x = 'Initial Height', y = 'TPA', fill = 'Species')+
+  theme_bw()+
+  theme(legend.position = 'bottom',
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))+
+  scale_fill_brewer(palette = 'Dark2')
+```
+The lower number of short trees here is probably because seedlings are excluded, and by the time trees are fat enough to be not seedlings, they're probably closer to a foot tall (depending on species). Then we see the big spike, presumably where most saplings fall in, then fewer and fewer big trees. Again, not unexpected.
+
+### Remeasurement intervals
+
+```{r}
+#| label: rem-int-viz
+
+trees_err$REM_INT <- trees_err$INV_YEAR_2-trees_err$INV_YEAR_1
+
+rem <- trees_err |>
+  select(CID, REM_INT) |>
+  distinct() |>
+  group_by(REM_INT) |>
+  tally() 
+
+ggplot(rem)+
+  geom_col(aes(x = REM_INT, y = n))+
+  theme_bw()+
+  scale_x_continuous(breaks = seq(4, 15))+
+  labs(x = 'Remeasurement interval', y = '# of conditions')
+
+```
+Most plots (`{r} 100*round(sum(rem$n[rem$REM_INT >= 9&rem$REM_INT <= 12])/sum(rem$n), 2)`%) were remeasured between 9-12 years after the initial measurement. 
+
+## Growth 
+
+### Growth distributions
+
+This is at the tree-level.
+
+```{r}
+#| label: growth-dists
+dg_dist <- trees_err |>
+  ggplot()+
+  geom_histogram(aes(x = fia_dg), color = 'black', fill = 'lightgrey')+
+  theme_bw()+
+  labs(x = 'FIA-measured diameter growth (in)',
+       y = 'Count')
+
+hg_dist <- trees_err |>
+  ggplot()+
+  geom_histogram(aes(x = fia_hg), color = 'black', fill = 'lightgrey')+
+  theme_bw()+
+  labs(x = 'FIA-measured height growth (in)',
+       y = 'Count')
+
+bag_dist <- trees_err |>
+  ggplot()+
+  geom_histogram(aes(x = fia_bag), color = 'black', fill = 'lightgrey')+
+  theme_bw()+
+  labs(x = 'FIA-measured basal area increment (ft2)',
+       y = 'Count')
+
+dg_dist|hg_dist
+
+```
+
+There is quite a range of diameter and height growth, which is promising; there's variation in the data that could potentially be captured in a model. Converting diameter growth to basal area increment causes the distribution to be much skewier and potentially not as nice computationally, so working with plain old diameter growth may be more computationally efficient.
+
+### Growth relationships
+
+```{r}
+ggplot(trees_err)+
+  geom_point(aes(x = fia_dbh_1, y = fia_dg), alpha = 0.1, size = 0.5)+
+  geom_vline(aes(xintercept = 5), linetype = 'dashed', color = 'red')+
+  theme_bw()+
+  labs(x = 'Initial DBH', y = 'Diameter growth')
+```
+The fact that there's a discontinuity in growth here at initial DBH = 5" is odd; there's no biological reason that I can think of for this discontinuity. However, it's very possible that there are simply more trees at this cutoff value and diameter growth is also extremely variable. Imagining that we marginalize the DG  distribution at initial DBH = 5, it would seem that we have a long-right tail (toward high diameter growth) with the center of mass being smaller. So perhaps the smaller sample size for trees just below the cutoff is contributing because we're sampling less on the "tail" of the possible diameter growth values?
+
+Same graph, but just for the four study species:
+```{r}
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  ggplot()+
+  geom_point(aes(x = fia_dbh_1, y = fia_dg, color = common_name), alpha = 0.25,
+             size = 0.5)+
+  geom_vline(aes(xintercept = 5), linetype = 'dashed')+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  scale_color_brewer(palette = 'Dark2')+
+  theme_bw()+
+  theme(legend.position = 'none')+
+  labs(x = 'Initial DBH', y = 'Diameter growth')
+```
+
+The same discontinuity is present. Is it possible that this has to do with different remeasurement time scales? Diameter growth isn't scaled by remeasurement interval, which ranges from 4 years at the smallest end to 15 on the largest. I don't think this could explain all of what we're seeing, though. There are about 7x more large trees than small. Let's focus on just big trees:
+
+```{r}
+trees_err |>
+  filter(common_name %in% study_sps,
+         fia_dbh_1 >= 5) |>
+  ggplot()+
+  geom_point(aes(x = fia_dbh_1, y = fia_dg, color = common_name), alpha = 0.25,
+             size = 0.5)+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  scale_color_brewer(palette = 'Dark2')+
+  theme_bw()+
+  theme(legend.position = 'none')+
+  labs(x = 'Initial DBH', y = 'Diameter growth')
+```
+
+In FVS, height growth is affected by initial height, too, so it's worth taking a look at the height growth-height relationship.
+
+```{r}
+#| label: hg-vs-ht
+
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  ggplot()+
+  geom_point(aes(x = fia_ht_1, y = fia_hg, color = common_name), alpha = 0.25,
+             size = 0.5)+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  scale_color_brewer(palette = 'Dark2')+
+  theme_bw()+
+  theme(legend.position = 'none')+
+  labs(x = 'Initial height', y = 'Height growth')
+
+```
+
+Finally, I'll do a first pass comparison of FIA-measured vs FVS-predicted growth vs initial size relationships using a GAM as a scatterplot smoother.
+
+```{r}
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  select(common_name, fia_dbh_1, fia_dg, fvs_dg) |>
+  tidyr::pivot_longer(cols = c(fia_dg, fvs_dg),
+                      names_to = 'source',
+                      values_to = 'growth') |>
+  mutate(source = substr(source, 1, 3)) |>
+  ggplot()+
+  geom_smooth(aes(x = fia_dbh_1, y = growth, color = common_name))+
+  facet_grid(rows = vars(source), cols = vars(common_name),
+             scales = 'free_x')+
+  scale_color_brewer(palette = 'Dark2')+
+  theme_bw()+
+  labs(x = 'Initial DBH', y = 'Diameter growth')+
+  theme(legend.position = 'none')
+
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  select(common_name, fia_dbh_1, fia_hg, fvs_hg) |>
+  tidyr::pivot_longer(cols = c(fia_hg, fvs_hg),
+                      names_to = 'source',
+                      values_to = 'growth') |>
+  mutate(source = substr(source, 1, 3)) |>
+  ggplot()+
+  geom_smooth(aes(x = fia_dbh_1, y = growth, color = common_name))+
+  facet_grid(rows = vars(source), cols = vars(common_name),
+             scales = 'free_x')+
+  scale_color_brewer(palette = 'Dark2')+
+  theme_bw()+
+  labs(x = 'Initial DBH', y = 'Height growth')+
+  theme(legend.position = 'none')
+
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  select(common_name, fia_ht_1, fia_hg, fvs_hg) |>
+  tidyr::pivot_longer(cols = c(fia_hg, fvs_hg),
+                      names_to = 'source',
+                      values_to = 'growth') |>
+  mutate(source = substr(source, 1, 3)) |>
+  ggplot()+
+  geom_smooth(aes(x = fia_ht_1, y = growth, color = common_name))+
+  facet_grid(rows = vars(source), cols = vars(common_name),
+             scales = 'free_x')+
+  scale_color_brewer(palette = 'Dark2')+
+  theme_bw()+
+  labs(x = 'Initial Height', y = 'Height growth')+
+  theme(legend.position = 'none')
+
+```
+
+
+## Error
+
+### Error distributions
+
+```{r}
+#| label: error_dists
+dg_err_dist <- trees_err |>
+  ggplot()+
+  geom_histogram(aes(x = dg_err), color = 'black', fill = 'lightgrey')+
+  labs(x = 'Diameter growth error (in)',
+       y = 'Count')
+
+hg_err_dist <- trees_err |>
+  ggplot()+
+  geom_histogram(aes(x = hg_err), color = 'black', fill = 'lightgrey')+
+  labs(x = 'Height growth error (in)',
+       y = 'Count')
+
+dg_err_dist+hg_err_dist&theme_bw()&geom_vline(aes(xintercept = 0))
+```
+
+Diameter growth errors are generally small but the center of the distribution is less than 0, indicating general overprediction of diameter growth. Height error is much more variable (see scale of x-axis) and again appears to be slightly off-center, though it's hard to tell. Height error may be a little skewed, but both look relatively normal which is a good sign because that is an FVS assumption.
+
+The joint diameter and height error distribution is also worth looking it. However, there are some trees with extremely large errors that make the joint picture "zoomed out," so we'll do a version with those removed by filtering out observations outside of the 1.5*IQR range. I'll also scale the axes by SD so that they're on comparable scales and I can use a fixed aspect ratio to better look at the shape of the joint distribution without it being confounded with the different scales of the variables.
+
+```{r}
+survivors_summ <- trees_err |>
+  summarize(dg_lquant = quantile(dg_err, 0.25),
+            dg_uquant = quantile(dg_err, 0.75),
+            hg_lquant = quantile(hg_err, 0.25),
+            hg_uquant = quantile(hg_err, 0.75),
+            bg_lquant = quantile(ba_err, 0.25),
+            bg_uquant = quantile(ba_err, 0.75))
+survivors_summ$dg_iqr <- survivors_summ$dg_uquant-survivors_summ$dg_lquant
+survivors_summ$hg_iqr <- survivors_summ$hg_uquant-survivors_summ$hg_lquant
+survivors_summ$bg_iqr <- survivors_summ$bg_uquant-survivors_summ$bg_lquant
+
+trees_err |>
+  ggplot()+
+  geom_density_2d_filled(aes(x = dg_err/sd(dg_err), y = hg_err/sd(hg_err)))+
+    geom_hline(aes(yintercept = 0), color = 'lightgrey', linetype = 'dashed')+
+  geom_vline(aes(xintercept = 0), color = 'lightgrey', linetype = 'dashed')+
+  coord_fixed()+
+  labs(x = 'Diameter growth error, sd-scaled',
+       y = 'Height growth error, sd-scaled',
+       fill = 'Density bin',
+       title = 'All alive, unbroken trees')
+
+trees_err |>
+  filter(dg_err >= survivors_summ$dg_lquant-1.5*survivors_summ$dg_iqr,
+         dg_err <= survivors_summ$dg_uquant+1.5*survivors_summ$dg_iqr,
+         hg_err >= survivors_summ$hg_lquant-1.5*survivors_summ$hg_iqr,
+         hg_err <= survivors_summ$hg_uquant+1.5*survivors_summ$hg_iqr) |>
+  ggplot()+
+  geom_density_2d_filled(aes(x = dg_err/sd(dg_err), y = hg_err/sd(hg_err)))+
+    geom_hline(aes(yintercept = 0), color = 'lightgrey', linetype = 'dashed')+
+  geom_vline(aes(xintercept = 0), color = 'lightgrey', linetype = 'dashed')+
+  labs(x = 'Diameter growth error, sd-scaled',
+       y = 'Height growth error, sd-scaled',
+       fill = 'Density bin',
+       title = 'Alive, unbroken trees, no outliers')
+```
+
+It's possible that the shape of this distribution is created by the species-level relationships between diameter and height growth. So, let's do this again but only for the most common species and split by species. This is also just alive, unbroken trees with outliers removed.
+
+```{r}
+trees_err |>
+  filter(dg_err >= survivors_summ$dg_lquant-1.5*survivors_summ$dg_iqr,
+         dg_err <= survivors_summ$dg_uquant+1.5*survivors_summ$dg_iqr,
+         hg_err >= survivors_summ$hg_lquant-1.5*survivors_summ$hg_iqr,
+         hg_err <= survivors_summ$hg_uquant+1.5*survivors_summ$hg_iqr,
+         common_name %in% study_sps) |>
+  ggplot()+
+  geom_density_2d_filled(aes(x = dg_err/(sd(dg_err)), y = hg_err/(sd(hg_err))))+
+  geom_hline(aes(yintercept = 0), color = 'lightgrey', linetype = 'dashed')+
+  geom_vline(aes(xintercept = 0), color = 'lightgrey', linetype = 'dashed')+
+  facet_wrap(facets = vars(common_name))+
+  theme_bw()+
+  coord_fixed()+
+  labs(x = 'Diameter growth error, sd-scaled',
+       y = 'Height growth error, sd-scaled',
+       fill = 'Density bin')
+```
+Splitting it out by species like this shows that the relationship we see in the unsplit version is probably at least somewhat influenced by how species. Yet, most species show a similar pattern. We don't see a bunch of nice, round-looking distributions that when you combine them they make that diagonal blob. Instead, it's a bunch of diagonal blobs that when combined make another diagonal blob. Western larch actually looks pretty good, though it's a bit diffuse.
+
+It's also interesting how much more dense lodgepole error is relative to Doug fir, which is quite a bit more diffuse over the space. It looks like FVS is more consistently wrong with lodgepole than with Doug fir. All this is good to put in our back pocket to consider whether we should be calibrating diameter alone or both, and whether our model should consider both at once. A nice part about this diagonal blob shape is that bringing diameter growth error closer to 0 also brings height growth error closer to 0. As Dave pointed out, if it went the other way but the center of mass was in the same place, bringing diameter growth error from negative towards 0 would make height growth error get worse (more negative).
+
+### Error relationships
+
+This dataframe will be used for adding annotations:
+
+```{r}
+#| code-fold: false
+median_errs <- trees_err |>
+  filter(common_name %in% study_sps) |>
+  summarize(med_dg_err = median(dg_err), 
+            med_hg_err = median(hg_err),
+            med_ba_err = median(ba_err),
+            .by = common_name) |>
+  # bounds where growth estimates are weighted
+  mutate(weight_lower = case_when(common_name == 'lodgepole pine' ~ 1,
+                                  .default = 2),
+         weight_upper = case_when(common_name == 'lodgepole pine' ~ 5,
+                                  .default = 10))
+```
+
+```{r}
+#| label: dg-err-vs-dbh1
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  ggplot()+
+  # shade in the region where prediction will be influenced by large tree model
+  geom_rect(data = median_errs, aes(xmin = weight_lower, xmax = weight_upper,
+                                    ymin = -8, ymax = 11),
+            fill = 'grey')+
+  geom_point(aes(x = fia_dbh_1, y = dg_err, color = common_name),
+             alpha = 0.25, size = 0.75)+
+  geom_hline(aes(yintercept = 0))+
+  # everything to the left of this is a "small tree" and was grown height-first
+  geom_vline(aes(xintercept = 3), lty = 'dotted')+
+  geom_hline(data = median_errs, aes(yintercept = med_dg_err),
+             linetype = 'dashed')+
+  facet_wrap(facets = vars(common_name))+
+  theme_bw()+
+  theme(legend.position = 'none',
+        panel.background = element_rect(fill = NA))+
+  scale_color_brewer(palette = 'Dark2')+
+  scale_y_continuous(limits = c(-8, 11))+
+  labs(x = 'Starting DBH', y = 'Error in diameter growth', color = 'Species')
+```
+
+After what I saw with the diameter growth discontinuity, I'll take the pattern of trees < 5" DBH with a grain of salt because it may just be a sample size issue. Generally, it looks like diameter growth error decreases with tree size, and median error is below 0. 
+
+Relative error is also worth looking at. That is, how bad are the errors relative to the actual measurement? For example, a 2-inch difference is pretty bad for a tree that's 5", but not bad for a tree that has a DBH of 40" or more. Based on the error vs starting DBH relationship above, I expect relative error to decrease as starting DBH increases.
+
+```{r}
+#| label: rel-dg-err-vs-dbh1
+
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  mutate(rel_dg_err = 100*abs(dg_err/fia_dbh_2)) |>
+  ggplot()+
+  # shade in the region where prediction will be influenced by large tree model
+  geom_rect(data = median_errs, aes(xmin = weight_lower, xmax = weight_upper,
+                                    ymin = 0, ymax = 120),
+            fill = 'grey')+
+  geom_point(aes(x = fia_dbh_1, y = rel_dg_err, color = common_name),
+             alpha = 0.5, size = 1)+
+  geom_hline(aes(yintercept = 0))+
+  geom_vline(aes(xintercept = 3), lty = 'dashed')+
+  facet_wrap(facets = vars(common_name), scales = 'free_x')+
+  theme_bw()+
+  theme(legend.position = 'none')+
+  scale_color_brewer(palette = 'Dark2')+
+  labs(x = 'Starting DBH', y = '% DG error')
+
+```
+To reduce the amount of information here, I'll plot just the median relative error at each DBH value for each species so that there is less overplotting.
+
+```{r}
+#| label: med-rel-dg-err
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  mutate(rel_dg_err = 100*abs(dg_err/fia_dbh_2)) |>
+  summarize(med_err = median(rel_dg_err), .by = c(fia_dbh_1, common_name)) |>
+  ggplot()+
+  # shade in the region where prediction will be influenced by large tree model
+  geom_rect(data = median_errs, aes(xmin = weight_lower, xmax = weight_upper,
+                                    ymin = 0, ymax = 120),
+            fill = 'grey')+
+  geom_point(aes(x = fia_dbh_1, y = med_err, color = common_name),
+             alpha = 0.5, size = 1)+
+  geom_hline(aes(yintercept = 0))+
+  geom_vline(aes(xintercept = 3), lty = 'dashed')+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  theme_bw()+
+  theme(legend.position = 'none')+
+  scale_color_brewer(palette = 'Dark2')+
+  labs(x = 'Starting DBH', y = 'Median % DG error')
+```
+I can make the same plots for height error:
+
+```{r}
+#| label: htg-err-vs-dbh1
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  ggplot()+
+  # shade in the region where prediction will be influenced by large tree model
+  geom_rect(data = median_errs, aes(xmin = weight_lower, xmax = weight_upper,
+                                    ymin = -40, ymax = 60),
+            fill = 'grey')+
+  geom_point(aes(x = fia_dbh_1, y = hg_err, color = common_name),
+             alpha = 0.25, size = 0.75)+
+  geom_hline(aes(yintercept = 0))+
+  # everything to the left of this is a "small tree" and was grown height-first
+  geom_vline(aes(xintercept = 3), lty = 'dotted')+
+  geom_hline(data = median_errs, aes(yintercept = med_hg_err),
+             linetype = 'dashed')+
+  facet_wrap(facets = vars(common_name))+
+  theme_bw()+
+  theme(legend.position = 'none',
+        panel.background = element_rect(fill = NA))+
+  scale_color_brewer(palette = 'Dark2')+
+  labs(x = 'Starting DBH', y = 'Error in height growth', color = 'Species')
+```
+Height error is much larger and more variable.
+
+```{r}
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  mutate(rel_htg_err = 100*abs(hg_err/fia_ht_2)) |>
+ # summarize(med_err = median(rel_htg_err), .by = c(fia_dbh_1, common_name)) |>
+  ggplot()+
+  # shade in the region where prediction will be influenced by large tree model
+  geom_rect(data = median_errs, aes(xmin = weight_lower, xmax = weight_upper,
+                                    ymin = 0, ymax = 120),
+            fill = 'grey')+
+  geom_point(aes(x = fia_dbh_1, y = rel_htg_err, color = common_name),
+             alpha = 0.5, size = 1)+
+  geom_hline(aes(yintercept = 0))+
+  geom_vline(aes(xintercept = 3), lty = 'dashed')+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  theme_bw()+
+  theme(legend.position = 'none')+
+  scale_color_brewer(palette = 'Dark2')+
+  labs(x = 'Starting DBH', y = '% HTG error')
+```
+Like with DBH error, relative height growth error decreases as trees get larger. I'll do the same thing of plotting the median relative height growth error for each starting DBH and each species, just to make it a bit easier to see the overall patterns here.
+
+```{r}
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  mutate(rel_htg_err = 100*abs(hg_err/fia_ht_2)) |>
+  summarize(med_err = median(rel_htg_err), .by = c(fia_dbh_1, common_name)) |>
+  ggplot()+
+  # shade in the region where prediction will be influenced by large tree model
+  geom_rect(data = median_errs, aes(xmin = weight_lower, xmax = weight_upper,
+                                    ymin = 0, ymax = 100),
+            fill = 'grey')+
+  geom_point(aes(x = fia_dbh_1, y = med_err, color = common_name),
+             alpha = 0.5, size = 1)+
+  geom_hline(aes(yintercept = 0))+
+  geom_vline(aes(xintercept = 3), lty = 'dashed')+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  theme_bw()+
+  theme(legend.position = 'none')+
+  scale_color_brewer(palette = 'Dark2')+
+  labs(x = 'Starting DBH', y = 'Median % HTG error')
+```
+
+## Mapping
+
+First, need to turn stand-level error measurements into spatial data.
+
+```{r}
+#| code-fold: false
+stand_err_spat <- st_as_sf(stand_err, coords = c('LONGITUDE', 'LATITUDE'),
+                           crs = 'epsg:4269') |>
+  st_transform(crs = st_crs(ie_buffered))
+stand_sp_err_spat <- st_as_sf(stand_sp_err, coords = c('LONGITUDE', 'LATITUDE'),
+                              crs = 'epsg:4269')
+```
+
+Now, we can make some maps!
+
+### Habitat types and EPA hexes
+
+```{r}
+stand_err_spat |>
+  ggplot()+
+  geom_sf(data = states, fill = 'darkgrey')+
+  geom_sf(aes(color = dominant_sp), size = 0.75)+
+  geom_sf(data = states, color = 'white', fill = NA)+
+  geom_sf(data = ie, fill = NA)+
+  geom_sf(data = ie_buffered, linetype = 'dashed', fill = NA)+
+  geom_sf(data = missoula, size = 2, pch = 21, fill = 'white')+
+  geom_sf(data = spokane, size = 1.5, pch = 21, fill = 'white')+
+  geom_sf(data = moscow, size = 1.5, pch = 21, fill = 'white')+
+  theme_bw()+
+  theme(legend.position = 'bottom')+
+  guides(color = guide_legend(override.aes = list(size = 3)))
+```
+Same, but grouping the less common habitat types together to reduce the number of colors:
+
+```{r}
+#| code-fold: false
+hab_frequencies <- stand_err |>
+  group_by(dominant_sp) |>
+  tally() |>
+  arrange(desc(n))
+
+hab_frequencies
+
+common_habs <- hab_frequencies$dominant_sp[1:6]
+```
+
+```{r}
+stand_err_spat |>
+  mutate(dominant_sp_simple = ifelse(dominant_sp %in% common_habs, dominant_sp, 'other')) |>
+  ggplot()+
+  geom_sf(data = states, fill = 'darkgrey')+
+  geom_sf(aes(color = dominant_sp_simple), size = 0.75)+
+  geom_sf(data = states, color = 'white', fill = NA)+
+  geom_sf(data = ie, fill = NA)+
+  geom_sf(data = ie_buffered, linetype = 'dashed', fill = NA)+
+  geom_sf(data = missoula, size = 2, pch = 21, fill = 'white')+
+  geom_sf(data = spokane, size = 1.5, pch = 21, fill = 'white')+
+  geom_sf(data = moscow, size = 1.5, pch = 21, fill = 'white')+
+  theme_bw()+
+  scale_color_brewer(type = 'qual')+
+  theme(legend.key = element_rect(fill = 'darkgrey'),
+        legend.position = 'bottom')+
+  guides(color = guide_legend(override.aes = list(size = 3)))
+  labs(color = 'Dominant species')
+```
+
+```{r}
+fia_per_hex <- stand_err |>
+  distinct(CID, EMAP_HEX) |>
+  group_by(EMAP_HEX) |>
+  tally() |>
+  right_join(ie_hexes) |>
+  st_as_sf()
+ggplot(fia_per_hex)+
+  geom_sf(data = states, fill = 'darkgrey')+
+  geom_sf(aes(fill = n))+
+  geom_sf(data = states, color = 'white', fill = NA)+
+  geom_sf(data = ie, fill = NA)+
+  geom_sf(data = ie_buffered, linetype = 'dashed', fill = NA)+
+  geom_sf(data = missoula, size = 2, pch = 21, fill = 'white')+
+  geom_sf(data = spokane, size = 1.5, pch = 21, fill = 'white')+
+  geom_sf(data = moscow, size = 1.5, pch = 21, fill = 'white')+
+  viridis::scale_fill_viridis(breaks = seq(0, 30, by = 5),
+                              limits = c(0, 30))+
+  labs(fill = '# FIA conditions')+
+  theme_bw()+
+  theme(legend.position = 'bottom')
+
+```
+
+
+### Error
+
+```{r}
+stand_err_spat |>
+  ggplot()+
+  geom_sf(data = states, fill = 'darkgrey')+
+  geom_sf(aes(color = dg_err), size = 0.75)+
+  geom_sf(data = states, color = 'white', fill = NA)+
+  geom_sf(data = ie, fill = NA)+
+  geom_sf(data = ie_buffered, linetype = 'dashed', fill = NA)+
+  geom_sf(data = missoula, size = 2, pch = 21, fill = 'white')+
+  geom_sf(data = spokane, size = 1.5, pch = 21, fill = 'white')+
+  geom_sf(data = moscow, size = 1.5, pch = 21, fill = 'white')+
+  viridis::scale_color_viridis()+
+  theme_bw()+
+  theme(legend.position = 'bottom')+
+  labs(color = 'Stand median diameter growth error')
+```
+Same map, but with height growth error:
+
+```{r}
+stand_err_spat |>
+  ggplot()+
+  geom_sf(data = states, fill = 'darkgrey')+
+  geom_sf(aes(color = hg_err), size = 0.75)+
+  geom_sf(data = states, color = 'white', fill = NA)+
+  geom_sf(data = ie, fill = NA)+
+  geom_sf(data = ie_buffered, linetype = 'dashed', fill = NA)+
+  geom_sf(data = missoula, size = 2, pch = 21, fill = 'white')+
+  geom_sf(data = spokane, size = 1.5, pch = 21, fill = 'white')+
+  geom_sf(data = moscow, size = 1.5, pch = 21, fill = 'white')+
+  viridis::scale_color_viridis()+
+  theme_bw()+
+  theme(legend.position = 'bottom')+
+  labs(color = 'Stand median height growth error')
+```
+
+There is a bit of a pattern here, maybe. Height error skews more positive in north Idaho and more negative on the boundaries of the variant. The fact that diameter growth error doesn't have the same spatial patterns makes me think that maybe there is a habitat x diameter growth x height growth miscalibration in FVS.
+
+Splitting it out by species:
+
+```{r}
+stand_sp_err_spat |>
+  filter(common_name %in% study_sps) |>
+  ggplot()+
+  geom_sf(data = states, fill = 'darkgrey')+
+  geom_sf(aes(color = dg_err), size = 0.75)+
+  geom_sf(data = states, color = 'white', fill = NA)+
+  geom_sf(data = ie, fill = NA)+
+  geom_sf(data = ie_buffered, linetype = 'dashed', fill = NA)+
+  geom_sf(data = missoula, size = 2, pch = 21, fill = 'white')+
+  geom_sf(data = spokane, size = 1.5, pch = 21, fill = 'white')+
+  geom_sf(data = moscow, size = 1.5, pch = 21, fill = 'white')+
+  facet_wrap(facets = vars(common_name))+
+  viridis::scale_color_viridis()+
+  theme_bw()+
+  theme(legend.position = 'bottom')+
+  labs(color = 'Stand median diameter growth error')
+```
+
+It definitely seems like different species have some different spatial patterns in error. We can also get a sense of species distribution across the study region, which of course I'm always a fan of. It's interesting that error doesn't get worse once we cross the IE variant boundary and enter the buffer zone. 
+
+```{r}
+stand_sp_err_spat |>
+  filter(common_name %in% study_sps) |>
+  ggplot()+
+  geom_sf(data = states, fill = 'darkgrey')+
+  geom_sf(aes(color = hg_err), size = 0.75)+
+  geom_sf(data = states, color = 'white', fill = NA)+
+  geom_sf(data = ie, fill = NA)+
+  geom_sf(data = ie_buffered, linetype = 'dashed', fill = NA)+
+  geom_sf(data = missoula, size = 2, pch = 21, fill = 'white')+
+  geom_sf(data = spokane, size = 1.5, pch = 21, fill = 'white')+
+  geom_sf(data = moscow, size = 1.5, pch = 21, fill = 'white')+
+  facet_wrap(facets = vars(common_name))+
+  viridis::scale_color_viridis()+
+  theme_bw()+
+  theme(legend.position = 'bottom')+
+  labs(color = 'Stand height growth error')
+```
+
