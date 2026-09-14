@@ -398,6 +398,22 @@ ggplot(rem)+
 ```
 Most plots (`{r} 100*round(sum(rem$n[rem$REM_INT >= 9&rem$REM_INT <= 12])/sum(rem$n), 2)`%) were remeasured between 9-12 years after the initial measurement. 
 
+```{r}
+arrange(rem, desc(n))
+```
+
+
+Finally, I'll look at error distributions by remeasurement interval.
+
+```{r}
+ggplot(trees_err)+
+  geom_boxplot(aes(x = factor(REM_INT), y = dg_err))+
+  geom_text(data = rem, aes(x = factor(REM_INT), label = n, y = 12))+
+  theme_bw()+
+  labs(x = 'Remeasurement Interval', y = 'Diameter growth error')
+```
+
+
 ## Growth 
 
 ### Growth distributions
