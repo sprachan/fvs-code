@@ -13,11 +13,13 @@
 # Dependencies ----
 library(dplyr)
 library(ggplot2)
+library(rFVSIEtools)
 
 # Functions ----
 calc_ba_ft <- function(diameter){
   (pi*(0.5*diameter)^2)/144
 }
+
 # FVS run results ----
 fvs_conn <- DBI::dbConnect(RSQLite::SQLite(), 
                            file.path('fvs_kwd_files', 'uc', 'FVSUncalib.db'))
@@ -53,7 +55,8 @@ fia_trees <- tbl(conn, 'FIA_allTrees') |>
  select(PID, TREE_CN, PLOT_ID, TUID, TREE_COUNT, HISTORY, SPECIES, HTTOPK, 
         DAMAGE1, SEVERITY1, FIA_TREE_ID, TREE_COUNT, 
         fia_dbh = DIAMETER, fia_ht = HT, INV_YEAR, EMAP_HEX, CID, calib_use) |>
-  collect() 
+  collect() |>
+  mutate(SPECIES = ifelse(nchar(SPECIES) <= 2, stringr::str_pad(SPECIES, 3, side = 'left', pad = '0'), SPECIES))
 tree_id_key <- tbl(conn, 'Tree_ID_KEY') |>
   collect()
 DBI::dbDisconnect(conn)
@@ -95,7 +98,7 @@ fvs_trees_linked |>
 # mismatches are all just FVS translation: 
 #> 747 --> 740 = Populus heterophylla --> Populus sp.
 #> 374 --> 375 = Betula occidentalis --> Betula papyrifera
-#> 15 --> 017 = Abies concolor --> Abies grandis
+#> 015 --> 017 = Abies concolor --> Abies grandis
 
 # Species info ----
 fia_sp_info <- data.frame(fia_prefix = c('01', '06', '07', 
@@ -150,22 +153,21 @@ trees_err <- fvs_trees_linked |>
   # only keep trees that were measured both times and that were alive at first
   filter(!is.na(fia_dbh_2), HISTORY_1 == 1) |>
   # calculate growth and error
-  mutate(fvs_dg = fvs_dbh_2-fvs_dbh_1,
-         fia_dg = fia_dbh_2-fia_dbh_1,
+  mutate(REM_INT = INV_YEAR_2-INV_YEAR_1,
+         fia_dds = dob_to_dib(fvs_sp, fia_dbh_2)^2-dob_to_dib(fvs_sp, fia_dbh_1)^2,
+         fvs_dds = dob_to_dib(fvs_sp, fvs_dbh_2)^2-dob_to_dib(fvs_sp, fvs_dbh_1)^2,
          fvs_hg = fvs_ht_2-fvs_ht_1,
          fia_hg = fia_ht_2-fia_ht_1,
-         fvs_bag = fvs_ba_2-fvs_ba_1,
-         fia_bag = fia_ba_2-fia_ba_1,
+         fia_dg = fia_dbh_2-fia_dbh_1,
+         fvs_dg = fvs_dbh_2-fvs_dbh_1,
          dg_err = fia_dg-fvs_dg,
          hg_err = fia_hg-fvs_hg,
-         ba_err = fia_bag-fvs_bag,
+         # matches FVS-IE self calibration procedure, see ie/dgdriv.f line 479
+         ldds_err_raw = log(fia_dds)-log(fvs_dds),
+         ldds_err = ldds_err_raw*(10/REM_INT),
          died = HISTORY_2 != 1,
          broke = !is.na(HTTOPK_2),
-         started_broken = !is.na(HTTOPK_1),
-         calib_use = case_when(died ~ FALSE,
-                               broke ~ FALSE,
-                               started_broken ~ FALSE,
-                               .default = TRUE)) |>
+         started_broken = !is.na(HTTOPK_1)) |>
   # add in stand info
   left_join(stands_join) |>
   mutate(fia_sp = stringr::str_pad(fia_sp, width = 3, pad = '0'),
