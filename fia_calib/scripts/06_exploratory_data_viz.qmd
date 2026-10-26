@@ -24,6 +24,9 @@ library(patchwork)
 library(sf)
 library(usmap)
 library(here)
+library(terra)
+library(tidyterra)
+library(ggforce)
 ```
 And some custom plotting functions.
 
@@ -123,12 +126,12 @@ stand_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |>
             med_ht1 = median(fia_ht_1),
             med_dbh2 = median(fia_dbh_2),
             med_ht2 = median(fia_ht_2),
-            fia_dg = median(fia_dg),
-            fia_hg = median(fia_hg),
-            fia_bag = median(fia_bag),
-            dg_err = median(dg_err),
-            hg_err = median(hg_err),
-            ba_err = median(ba_err)) |>
+            med_dg = median(fia_dg),
+            med_hg = median(fia_hg),
+            med_dds = median(fia_dds),
+            med_dg_err = median(dg_err),
+            med_hg_err = median(hg_err),
+            med_ldds_err = median(ldds_err)) |>
   ungroup() |>
   # want to get plot information back
   left_join(distinct(trees_err[c('CID', 'LATITUDE', 'LONGITUDE',
@@ -144,12 +147,12 @@ stand_sp_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |
             med_ht1 = median(fia_ht_1),
             med_dbh2 = median(fia_dbh_2),
             med_ht2 = median(fia_ht_2),
-            fia_dg = median(fia_dg),
-            fia_hg = median(fia_hg),
-            fia_bag = median(fia_bag),
-            dg_err = median(dg_err, na.rm = TRUE),
-            hg_err = median(hg_err),
-            ba_err = median(ba_err)) |>
+             med_dg = median(fia_dg),
+            med_hg = median(fia_hg),
+            med_dds = median(fia_dds),
+            med_dg_err = median(dg_err),
+            med_hg_err = median(hg_err),
+            med_ldds_err = median(ldds_err)) |>
   ungroup() |>
   # want to get plot information back
   left_join(distinct(trees_err[c('CID', 'LATITUDE', 'LONGITUDE',
@@ -228,6 +231,16 @@ moscow <- st_as_sf(data.frame(lat = 46.731705, lon = -116.999939),
 The first set of graphics will explore the distribution of the data in various ways.
 
 ### Species composition
+
+```{r}
+trees_err |>
+  group_by(common_name) |>
+  tally() |>
+  mutate(prop = n/sum(n)) |>
+  arrange(desc(prop))
+
+```
+
 
 ```{r}
 #| label: species_comp
@@ -436,18 +449,18 @@ hg_dist <- trees_err |>
   labs(x = 'FIA-measured height growth (in)',
        y = 'Count')
 
-bag_dist <- trees_err |>
+dds_dist <- trees_err |>
   ggplot()+
-  geom_histogram(aes(x = fia_bag), color = 'black', fill = 'lightgrey')+
+  geom_histogram(aes(x = fia_dds), color = 'black', fill = 'lightgrey')+
   theme_bw()+
-  labs(x = 'FIA-measured basal area increment (ft2)',
+  labs(x = 'FIA-measured DDS (in^2)',
        y = 'Count')
 
-dg_dist|hg_dist
+dg_dist|hg_dist|dds_dist
 
 ```
 
-There is quite a range of diameter and height growth, which is promising; there's variation in the data that could potentially be captured in a model. Converting diameter growth to basal area increment causes the distribution to be much skewier and potentially not as nice computationally, so working with plain old diameter growth may be more computationally efficient.
+There is quite a range of diameter and height growth, which is promising; there's variation in the data that could potentially be captured in a model. Converting diameter growth to basal area increment causes the distribution to be much skewier.
 
 ### Growth relationships
 
@@ -581,10 +594,16 @@ hg_err_dist <- trees_err |>
   labs(x = 'Height growth error (in)',
        y = 'Count')
 
-dg_err_dist+hg_err_dist&theme_bw()&geom_vline(aes(xintercept = 0))
+ldds_err_dist <- trees_err |>
+  ggplot()+
+  geom_histogram(aes(x = ldds_err), color = 'black', fill = 'lightgrey')+
+  labs(x = 'log(DDS) growth error',
+       y = 'Count')
+
+dg_err_dist+hg_err_dist+ldds_err_dist&theme_bw()&geom_vline(aes(xintercept = 0))
 ```
 
-Diameter growth errors are generally small but the center of the distribution is less than 0, indicating general overprediction of diameter growth. Height error is much more variable (see scale of x-axis) and again appears to be slightly off-center, though it's hard to tell. Height error may be a little skewed, but both look relatively normal which is a good sign because that is an FVS assumption.
+Diameter growth errors are generally small but the center of the distribution is less than 0, indicating general overprediction of diameter growth. Height error is much more variable (see scale of x-axis) and again appears to be slightly off-center, though it's hard to tell. Height error may be a little skewed, but both look relatively normal which is a good sign because that is an FVS assumption. In contrast log(DDS) growth error is more skewed, with a longer tail to the left of the mode of the distribution.
 
 The joint diameter and height error distribution is also worth looking it. However, there are some trees with extremely large errors that make the joint picture "zoomed out," so we'll do a version with those removed by filtering out observations outside of the 1.5*IQR range. I'll also scale the axes by SD so that they're on comparable scales and I can use a fixed aspect ratio to better look at the shape of the joint distribution without it being confounded with the different scales of the variables.
 
@@ -594,11 +613,11 @@ survivors_summ <- trees_err |>
             dg_uquant = quantile(dg_err, 0.75),
             hg_lquant = quantile(hg_err, 0.25),
             hg_uquant = quantile(hg_err, 0.75),
-            bg_lquant = quantile(ba_err, 0.25),
-            bg_uquant = quantile(ba_err, 0.75))
+            ldds_lquant = quantile(ldds_err, 0.25, na.rm = TRUE),
+            ldds_uquant = quantile(ldds_err, 0.75, na.rm = TRUE))
 survivors_summ$dg_iqr <- survivors_summ$dg_uquant-survivors_summ$dg_lquant
 survivors_summ$hg_iqr <- survivors_summ$hg_uquant-survivors_summ$hg_lquant
-survivors_summ$bg_iqr <- survivors_summ$bg_uquant-survivors_summ$bg_lquant
+survivors_summ$ldds_iqr <- survivors_summ$ldds_uquant-survivors_summ$ldds_lquant
 
 trees_err |>
   ggplot()+
@@ -660,7 +679,7 @@ median_errs <- trees_err |>
   filter(common_name %in% study_sps) |>
   summarize(med_dg_err = median(dg_err), 
             med_hg_err = median(hg_err),
-            med_ba_err = median(ba_err),
+            med_ldds_err = median(ldds_err),
             .by = common_name) |>
   # bounds where growth estimates are weighted
   mutate(weight_lower = case_when(common_name == 'lodgepole pine' ~ 1,
@@ -845,7 +864,34 @@ stand_err_spat |>
   theme(legend.position = 'bottom')+
   guides(color = guide_legend(override.aes = list(size = 3)))
 ```
-Same, but grouping the less common habitat types together to reduce the number of colors:
+Same, but as a raster with the majority habitat type filling each cell:
+
+```{r}
+template <- terra::rast(nrows = 75, ncols = 75, nlyrs = 1,
+                        crs = terra::crs(terra::vect(stand_err_spat)),
+                        extent = terra::ext(terra::vect(stand_err_spat)))
+habtype_raster <- terra::rasterize(terra::vect(stand_err_spat), template,
+                                   field = 'dominant_sp')
+
+ggplot()+
+  geom_sf(data = states, fill = 'darkgrey')+
+  geom_spatraster(data = habtype_raster)+
+  geom_sf(data = states, color = 'white', fill = NA)+
+  geom_sf(data = ie, fill = NA)+
+  geom_sf(data = ie_buffered, linetype = 'dashed', fill = NA)+
+  geom_sf(data = missoula, size = 2, pch = 21, fill = 'white')+
+  geom_sf(data = spokane, size = 1.5, pch = 21, fill = 'white')+
+  geom_sf(data = moscow, size = 1.5, pch = 21, fill = 'white')+
+  theme_bw()+
+  theme(legend.position = 'bottom')+
+  scale_fill_discrete(na.value = NA)+
+  guides(color = guide_legend(override.aes = list(size = 3)))
+  
+```
+
+
+
+but grouping the less common habitat types together to reduce the number of colors:
 
 ```{r}
 #| code-fold: false
@@ -906,21 +952,42 @@ ggplot(fia_per_hex)+
 
 ### Error
 
+These data are certainly best mapped as rasters.
+
 ```{r}
-stand_err_spat |>
-  ggplot()+
+template <- terra::rast(nrows = 75, ncols = 75, nlyrs = 1,
+                        crs = terra::crs(terra::vect(stand_sp_err_spat)),
+                        extent = terra::ext(terra::vect(stand_sp_err_spat)))
+
+dg_err_rast <- rasterize(vect(stand_sp_err_spat), template,
+                         field = 'med_dg_err',
+                         fun = median)
+
+hg_err_rast <- rasterize(vect(stand_sp_err_spat), template,
+                         field = 'med_hg_err',
+                         fun = median)
+
+ldds_err_rast <- rasterize(vect(stand_sp_err_spat), template,
+                         field = 'med_ldds_err',
+                         fun = median)
+
+
+```
+
+
+```{r}
+ggplot()+
   geom_sf(data = states, fill = 'darkgrey')+
-  geom_sf(aes(color = dg_err), size = 0.75)+
-  geom_sf(data = states, color = 'white', fill = NA)+
+  geom_spatraster(data = ldds_err_rast)+
   geom_sf(data = ie, fill = NA)+
   geom_sf(data = ie_buffered, linetype = 'dashed', fill = NA)+
   geom_sf(data = missoula, size = 2, pch = 21, fill = 'white')+
   geom_sf(data = spokane, size = 1.5, pch = 21, fill = 'white')+
   geom_sf(data = moscow, size = 1.5, pch = 21, fill = 'white')+
-  viridis::scale_color_viridis()+
+  viridis::scale_fill_viridis(na.value = NA)+
   theme_bw()+
   theme(legend.position = 'bottom')+
-  labs(color = 'Stand median diameter growth error')
+  labs(fill = 'Median of stand median ln(DDS) error')
 ```
 Same map, but with height growth error:
 
@@ -928,7 +995,7 @@ Same map, but with height growth error:
 stand_err_spat |>
   ggplot()+
   geom_sf(data = states, fill = 'darkgrey')+
-  geom_sf(aes(color = hg_err), size = 0.75)+
+  geom_sf(aes(color = med_hg_err), size = 0.75)+
   geom_sf(data = states, color = 'white', fill = NA)+
   geom_sf(data = ie, fill = NA)+
   geom_sf(data = ie_buffered, linetype = 'dashed', fill = NA)+
@@ -950,7 +1017,7 @@ stand_sp_err_spat |>
   filter(common_name %in% study_sps) |>
   ggplot()+
   geom_sf(data = states, fill = 'darkgrey')+
-  geom_sf(aes(color = dg_err), size = 0.75)+
+  geom_sf(aes(color = med_ldds_err), size = 0.75)+
   geom_sf(data = states, color = 'white', fill = NA)+
   geom_sf(data = ie, fill = NA)+
   geom_sf(data = ie_buffered, linetype = 'dashed', fill = NA)+
@@ -961,7 +1028,7 @@ stand_sp_err_spat |>
   viridis::scale_color_viridis()+
   theme_bw()+
   theme(legend.position = 'bottom')+
-  labs(color = 'Stand median diameter growth error')
+  labs(color = 'Stand median ln(DDS) error')
 ```
 
 It definitely seems like different species have some different spatial patterns in error. We can also get a sense of species distribution across the study region, which of course I'm always a fan of. It's interesting that error doesn't get worse once we cross the IE variant boundary and enter the buffer zone. 
@@ -971,7 +1038,7 @@ stand_sp_err_spat |>
   filter(common_name %in% study_sps) |>
   ggplot()+
   geom_sf(data = states, fill = 'darkgrey')+
-  geom_sf(aes(color = hg_err), size = 0.75)+
+  geom_sf(aes(color = med_hg_err), size = 0.75)+
   geom_sf(data = states, color = 'white', fill = NA)+
   geom_sf(data = ie, fill = NA)+
   geom_sf(data = ie_buffered, linetype = 'dashed', fill = NA)+
@@ -983,5 +1050,188 @@ stand_sp_err_spat |>
   theme_bw()+
   theme(legend.position = 'bottom')+
   labs(color = 'Stand height growth error')
+```
+
+## Predictor Visualizations
+
+### Aspect, Elevation, and Habitat Type
+
+Contours are every 2000ft, starting at 1300ft.
+
+All habitat types:
+
+```{r}
+min_elev <- min(floor(stand_err$ELEVFT))
+max_elev <- max(ceiling(stand_err$ELEVFT))
+stand_err |>
+  mutate(asp_rotated = (90-ASPECT) %% 360,
+         elev_band = (cut(ELEVFT, 
+                         breaks = seq(min(floor(ELEVFT)),
+                                      max(ceiling(ELEVFT)),
+                                      by = 500),
+                         labels = FALSE,
+                         include.lowest = TRUE)-1)*500 + min_elev,
+         targ_x = (max_elev-ELEVFT)*cos(pi*asp_rotated/180),
+         targ_y = (max_elev-ELEVFT)*sin(pi*asp_rotated/180)) |>
+  ggplot()+
+  geom_point(aes(x = targ_x, y = targ_y), alpha = 0.75, color = 'salmon', size = 1)+
+  geom_circle(data = data.frame(x0 = 0, y0 = 0, 
+                                r = seq(min_elev, max_elev, by = 2000)), 
+              aes(x0 = x0, y0 = y0, r = r))+
+  annotate(geom = 'text', x = max_elev, y = 500, label = '1300', size = 2)+
+  annotate(geom = 'text', x = max_elev-2000, y = 1000, label = '3300', size = 2)+
+  geom_hline(aes(yintercept = 0), color = 'lightgrey')+
+  geom_vline(aes(xintercept = 0), color = 'lightgrey')+
+  # annotate(geom = 'text', label = 'N', x = 0, y = 10000)+
+  # annotate(geom = 'text', label = 'W', x = -10000, y = 0)+
+  # annotate(geom = 'text', label = 'S', x = 0, y = -10000)+
+  # annotate(geom = 'text', label = 'E', x = 10000, y = 0)+
+  coord_fixed()+
+  theme_void()+
+  labs(x = '', y = '')+
+  facet_wrap(facets = vars(dominant_sp))
+```
+
+Unsurprisingly, subalpine fir, subalpine larch, whitebark pine, and lodgepole pine habitat types are all high elevations. Spruces, hemlocks, grand fir, and cedar habitat types make up the middle elevation bands. Douglas-fir is at most elevations except the very highest north-facing slopes and the lowest elevations. Ponderosa pine habitat types are somewhat more concentrated on south-facing slopes, and north-facing PIPO habitat types are at lower elevations.
+
+Simplified habitat types (just the most common ones):
+
+```{r}
+stand_err |>
+  mutate(asp_rotated = (90-ASPECT) %% 360,
+         elev_band = (cut(ELEVFT, 
+                         breaks = seq(min(floor(ELEVFT)),
+                                      max(ceiling(ELEVFT)),
+                                      by = 500),
+                         labels = FALSE,
+                         include.lowest = TRUE)-1)*500 + min_elev,
+         targ_x = (max_elev-ELEVFT)*cos(pi*asp_rotated/180),
+         targ_y = (max_elev-ELEVFT)*sin(pi*asp_rotated/180),
+         dominant_sp_simple = ifelse(dominant_sp %in% common_habs, dominant_sp, 'other')) |>
+  ggplot()+
+  geom_point(aes(x = targ_x, y = targ_y), alpha = 0.75, color = 'salmon', size = 1)+
+  geom_circle(data = data.frame(x0 = 0, y0 = 0, 
+                                r = seq(min_elev, max_elev, by = 2000)), 
+              aes(x0 = x0, y0 = y0, r = r))+
+  annotate(geom = 'text', x = max_elev, y = 500, label = '1300', size = 2)+
+  annotate(geom = 'text', x = max_elev-2000, y = 1000, label = '3300', size = 2)+
+  geom_hline(aes(yintercept = 0), color = 'lightgrey')+
+  geom_vline(aes(xintercept = 0), color = 'lightgrey')+
+  annotate(geom = 'text', label = 'N', x = 0, y = 10000)+
+  annotate(geom = 'text', label = 'W', x = -10000, y = 0)+
+  annotate(geom = 'text', label = 'S', x = 0, y = -10000)+
+  annotate(geom = 'text', label = 'E', x = 10000, y = 0)+
+  coord_fixed()+
+  theme_void()+
+  labs(x = '', y = '')+
+  facet_wrap(facets = vars(dominant_sp_simple))
+```
+
+### Ecoregion
+
+Ecoregion polygons from https://earthworks.stanford.edu/catalog/stanford-tj200ct4975; forest boundaries from https://data.fs.usda.gov/geodata/edw/datasets.php?dsetCategory=boundaries.
+
+```{r}
+eco_poly <- st_read(here('raw_data', 'ecoregions', 'ecoregp075.shp')) |>
+  st_transform(crs = st_crs(ie_buffered)) |>
+  st_crop(ie_buffered)
+
+forest_poly <- st_read(here('raw_data', 'forest_admin_bnds', 'S_USA.BdyAdm_LSRS_AdministrativeForest.shp')) |>
+  st_transform(crs = st_crs(ie_buffered)) |>
+  st_crop(ie_buffered) |>
+  select(ADMINFORES, REGION, FORESTNUMB, FORESTNAME)
+
+stand_err_eco_spat <- st_intersection(stand_err_spat, eco_poly)
+
+ggplot()+
+  geom_sf(data = forest_poly, aes(fill = FORESTNAME, color = FORESTNAME))+
+  geom_sf(data = eco_poly, fill = NA, lwd = 1)+
+  scale_color_viridis_d(option = 'turbo')+
+  scale_fill_viridis_d(option = 'turbo')
+```
+Generally, NF boundaries (filled shapes) are not perfectly aligned with ecoregion (at the section level). Most forests cover 2-3 ecosections.
+
+```{r}
+ggplot()+
+  geom_sf(data = forest_poly, aes(fill = FORESTNAME, color = FORESTNAME))+
+  geom_sf(data = summarize(group_by(eco_poly, PROVINCE)), fill = NA, lwd = 1)+
+  scale_color_viridis_d(option = 'turbo')+
+  scale_fill_viridis_d(option = 'turbo')
+```
+We get a good amount of variety in terms of which national forests are in which ecoprovinces.
+```{r}
+ggplot()+
+  geom_sf(data = forest_poly, aes(fill = FORESTNAME, color = FORESTNAME))+
+  geom_sf(data = summarize(group_by(eco_poly, DIVISION)), fill = NA, lwd = 1)+
+  scale_color_viridis_d(option = 'turbo')+
+  scale_fill_viridis_d(option = 'turbo')
+```
+
+At the division level, most forests fall within one division.
+
+```{r}
+stand_err_eco_spat |>
+  st_drop_geometry() |>
+  ggplot(aes(x = PROVINCE, fill = dominant_sp))+
+  geom_bar()
+
+stand_err_eco_spat |>
+  st_drop_geometry() |>
+  ggplot(aes(x = SECTION, fill = dominant_sp))+
+  geom_bar()
+```
+There's good mixing of habitat types within ecoprovince and ecosection, which is a good sign.
+
+### Eco Hierarchy and SD
+
+```{r}
+tree_err_spat <- trees_err |>
+  filter(!is.na(dg_err)) |>
+  select(fvs_sp, LONGITUDE, LATITUDE, dg_err) |>
+  st_as_sf(coords = c('LONGITUDE', 'LATITUDE'),
+                           crs = 'epsg:4269') |>
+  st_transform(crs = st_crs(ie_buffered)) |>
+  st_intersection(eco_poly)
+
+dom_summ <- tree_err_spat |>
+  st_drop_geometry() |>
+  rename(name = DOMAIN) |>
+  group_by(name) |>
+  summarize(std_dev = sd(dg_err, na.rm = TRUE),
+            n = n(),
+            level = 'domain')
+
+div_summ <- tree_err_spat |>
+  st_drop_geometry() |>
+  rename(name = DIVISION) |>
+  group_by(name) |>
+  summarize(std_dev = sd(dg_err, na.rm = TRUE),
+            n = n(),
+            level = 'division')
+
+prov_summ <- tree_err_spat |>
+  st_drop_geometry() |>
+  rename(name = PROVINCE) |>
+  group_by(name) |>
+  summarize(std_dev = sd(dg_err, na.rm = TRUE),
+            n = n(),
+            level = 'province')
+
+sect_summ <- tree_err_spat |>
+  st_drop_geometry() |>
+    rename(name = SECTION) |>
+  group_by(name) |>
+  summarize(std_dev = sd(dg_err, na.rm = TRUE),
+            n = n(),
+            level = 'section')
+
+eco_sd <- bind_rows(dom_summ, div_summ, prov_summ, sect_summ) |>
+  mutate(level = factor(level, 
+                        levels = c('domain', 'division', 'province', 'section'), 
+                        ordered = TRUE))
+
+ggplot(eco_sd)+
+  geom_boxplot(aes(x = level, y = std_dev), outliers = FALSE)+
+  geom_jitter(aes(x = level, y = std_dev), width = 0.2)
 ```
 
