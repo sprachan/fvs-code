@@ -300,7 +300,9 @@ sp_mismatches <- fvs_trees_all |>
          match23 = SPECIES_2 == SPECIES_3, 
          match13 = SPECIES_1 == SPECIES_3) |>
   # if there was ever any disagreement, mark as mismatch
-  filter(!match12|!match23|!match13) 
+  filter(!match12|!match23|!match13) |>
+  mutate(discard = case_when(is.na(SPECIES_3)&match12 ~ FALSE, # only marked as mismatch bc year 3 not there
+                             .default = TRUE))
 
 ## Trees that shrunk ----
 trees_yy <- fvs_trees_all |>
@@ -317,10 +319,11 @@ trees_yy <- fvs_trees_all |>
          started_broken = !is.na(HTTOPK_1),
          broke = !is.na(HTTOPK_2),
          diam_shrunk = !started_dead & !died & DG < 0,
-         ht_shrunk = !started_dead & !died & !broke & HG < -10)
-flagged_trees <- trees_yy |>
-  filter(started_dead|died|started_broken|broke|diam_shrunk|ht_shrunk) |>
-  pull(TUID)
+         ht_shrunk = !started_dead & !died & !broke & HG < -10) |>
+  mutate(discard = started_dead|died|started_broken|broke|diam_shrunk|ht_shrunk) 
+
+flagged_trees <- unique(c(trees_yy$TUID[trees_yy$discard], 
+                          sp_mismatches$TUID[sp_mismatches$discard]))
 
 ## Assign TREE_IDs that can be mapped to TUID ----
 tree_id_key <- fvs_trees_all |>
@@ -337,7 +340,8 @@ fvs_trees_all <- fvs_trees_all |>
   # column flagging whether or not the tree will be used in calibration
   mutate(calib_use = case_when(DIAMETER < 3 ~ FALSE,
                                TUID %in% flagged_trees ~ FALSE,
-                               .default = TRUE))
+                               .default = TRUE),
+         sp_mismatch = TUID %in% sp_mismatches$TUID)
 
 fvs_tree_init_out <- fvs_trees_all |>
   left_join(tree_id_key) |>
@@ -350,7 +354,7 @@ stopifnot(nrow(fvs_tree_init_out) == length(unique(fvs_tree_init_out$TUID)))
 100*(length(unique(fvs_stand_init_filt$STAND_ID))/length(unique(fvs_stand_init$CID)))
 # kept 96% of all input stands
 100*(length(unique(fvs_tree_init_out$TUID[fvs_tree_init_out$calib_use]))/length(unique(fvs_trees_all$TUID)))
-# kept 62% of all input trees
+# kept 46% of all input trees
 
 # Write stand and tree tables to SQLite database for FVS ease of access ----
 conn <- DBI::dbConnect(RSQLite::SQLite(), file.path('data', 'fvs_ready.db'))
