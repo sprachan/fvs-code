@@ -16,30 +16,6 @@ library(dplyr)
 library(ggplot2)
 
 # Functions ----
-get_errs <- function(db, stands){
-  out_conn <- DBI::dbConnect(RSQLite::SQLite(), db)
-  errs <- dplyr::tbl(out_conn, 'FVS_Error') |>
-    collect()|>
-    mutate(warncd = as.integer(substr(Message, 4, 5)),
-           warn_type = case_when(warncd == 1|warncd == 4|warncd == 16 ~ 'Keyword',
-                                 warncd == 3 ~ 'Forest Bounds',
-                                 warncd == 8 ~ 'Insufficient Trees',
-                                 warncd == 9 ~ 'Plot Counts',
-                                 warncd == 14|warncd == 23|(warncd>31&warncd<36) ~ 'Hab Type',
-                                 warncd == 40 ~ 'High Tree Count',
-                                 warncd == 41 ~ 'Stocking',
-                                 .default = 'Other')) |>
-    inner_join(stands, by = join_by(StandID == STAND_ID))
-  DBI::dbDisconnect(out_conn)
-  errs
-}
-
-view_errs <- function(db, stands){
-  errs <- get_errs(db, stands)
-  message('Error messages: \n', paste(sort(unique(errs$Message)), collapse = '\n'))
-  ggplot2::ggplot(errs)+ggplot2::geom_bar(ggplot2::aes(x = warn_type))
-}
-
 run_by_loc <- function(regional_stands, stands_by_loc, out_dir, out_db, calibrate, ...){
   prog <- 0
   pb <- txtProgressBar(min = 0, max = length(names(stands_by_loc)), style = 3)
@@ -66,7 +42,7 @@ run_by_loc <- function(regional_stands, stands_by_loc, out_dir, out_db, calibrat
   }
   close(pb)
   
-  view_errs(file.path(out_dir, out_db), regional_stands)
+  rFVSIEtools::plot_FVS_messages(out_dir, out_db, regional_stands, verbose = TRUE)
 }
 # File paths and data ----
 fvs_bin <- 'C:/FVS/FVSSoftware/FVSbin'
