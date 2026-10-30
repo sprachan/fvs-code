@@ -1,0 +1,428 @@
+---
+title: "Exploratory Data Analysis 3: Predictors"
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+    code-summary: "Code to generate figure"
+    df-print: kable
+execute:
+  code-fold: true
+---
+
+## Setup
+First, packages.
+
+```{r}
+#| label: packages
+#| code-fold: false
+#| collapse: true
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(sf)
+library(usmap)
+library(here)
+library(terra)
+library(tidyterra)
+library(ggforce)
+```
+And some custom plotting functions.
+
+```{r}
+#| label: functions
+#| code-fold: false
+
+plot_tpa_dist <- function(data, dist_var, tpa_var, ..., bins = 10){
+  dv <- pull(data, {{dist_var}})
+  dots <- rlang::enquos(...)
+  stopifnot(length(dots) <= 1)
+  if(length(dots) == 0){
+    breaks <- seq(0, ceiling(max(dv)), length.out = bins)
+    plt_dat <- select(data, {{dist_var}}, {{tpa_var}}) |>
+      mutate(bin = cut({{dist_var}}, breaks = breaks, ordered_result = TRUE)) |>
+      summarize(n_trees = sum({{tpa_var}}), .by = bin)
+    p <- ggplot(plt_dat, aes(x = bin, y = n_trees))+
+      geom_col()
+  }else{
+    plt_dat <- data |>
+      group_by(...) |>
+      mutate(bin = cut({{dist_var}},
+                       breaks = seq(0, 
+                                    ceiling(max({{dist_var}})), 
+                                    length.out = bins)),
+             bin = forcats::fct_reorder(bin, {{dist_var}})) |>
+      ungroup() |>
+      
+      group_by(bin, ...) |>
+      summarize(n_trees = sum({{tpa_var}}))
+    p <- ggplot(plt_dat, aes(x = bin, y = n_trees, fill = !!dots[[1]]))+
+      geom_col()
+  }
+  p
+}
+```
+
+### Error data
+
+In addition to reading in the data, I calculate trees per acre. This depends on whether the tree was measured in a subplot, microplot, or macroplot. 
+
+```{r}
+#| label: read-error-data
+#| code-fold: false
+
+trees_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |>
+  filter(calib_use) |>
+  mutate(macro = NUM_PLOTS != 4,
+         TPA_1 = case_when(fia_dbh_1 < 5 ~ 74.965282,
+                           !macro&fia_dbh_1 >= 5 ~ 6.018046,
+                           macro&fia_dbh_1 >= 5 ~ 0.999188,
+                           .default = NA),
+         TPA_2 = case_when(fia_dbh_2 < 5 ~ 74.965282,
+                           !macro&fia_dbh_2 >= 5 ~ 6.018046,
+                           macro&fia_dbh_2 >= 5 ~ 0.999188,
+                           .default = NA),
+         rm = fia_dg == 0)
+head(trees_err)
+```
+
+
+Instead of going with the default alphabetical factor ordering, I'll order the "species" factor in the dataframe in order of species prevalence.
+
+```{r}
+#| label: species-factor
+#| code-fold: false
+
+sp_table <- sort(table(trees_err$common_name), decreasing = TRUE)
+knitr::kable(sp_table, col.names = c('Species', 'Frequency'))
+trees_err$common_name <- factor(trees_err$common_name, 
+                                levels = names(sp_table),
+                                ordered = TRUE)
+sp_group_table <- sort(table(trees_err$fvs_sp_group), decreasing = TRUE)
+trees_err$fvs_sp_group <- factor(trees_err$fvs_sp_group, 
+                                 levels = names(sp_group_table),
+                                 ordered = TRUE)
+```
+
+I'll also define 4 study species to focus on. Douglas-fir is the most common species in the study region, it's widespread, and it's commercially important (though perhaps more so in the PNW than the inland northwest). Lodgepole pine is also quite common, and it spans an elevational gradient, which makes it a useful case study to look at some elevational effects. Western larch is more specialized to somewhat wetter areas. Finally, ponderosa pine is more restricted to dry sites than the other species, so trends in FVS' PIPO accuracy may give some insight into dry site accuracy.
+
+```{r}
+#| label: def-study-sp
+#| code-fold: false
+study_sps <- c('Douglas-fir', 'lodgepole pine', 
+               'western larch',  'ponderosa pine')
+```
+
+The initial tree dataframe is structured where every row is a tree. However, sometimes we may want to instead look at error at the species-within-stand level, and sometimes just at the stand level. I took the median of all metrics because they are quite skewed, so the mean is not as accurate a representation of the center of the distribution. The `matched_by` column describes how the habitat type was matched.
+
+```{r}
+#| label: stand-err
+#| collapse: true
+#| code-fold: false
+
+stand_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |>
+  filter(!died, !broke, !started_broken) |>
+  group_by(CID) |>
+  summarize(med_dbh1 = median(fia_dbh_1),
+            med_ht1 = median(fia_ht_1),
+            med_dbh2 = median(fia_dbh_2),
+            med_ht2 = median(fia_ht_2),
+            med_dg = median(fia_dg),
+            med_hg = median(fia_hg),
+            med_dds = median(fia_dds),
+            med_dg_err = median(dg_err),
+            med_hg_err = median(hg_err),
+            med_ldds_err = median(ldds_err)) |>
+  ungroup() |>
+  # want to get plot information back
+  left_join(distinct(trees_err[c('CID', 'LATITUDE', 'LONGITUDE',
+                                 'EMAP_HEX',  'LOCATION', 'ECOREGION', 
+                                 'AGE', 'ASPECT', 'SLOPE', 'ELEVFT', 'PV_CODE', 
+                                 'dominant_sp', 'matched_by', 'OWNCD')]))
+head(stand_err)
+
+stand_sp_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |>
+  filter(!died, !broke, !started_broken) |>
+  group_by(CID, fvs_sp, common_name) |>
+  summarize(med_dbh1 = median(fia_dbh_1),
+            med_ht1 = median(fia_ht_1),
+            med_dbh2 = median(fia_dbh_2),
+            med_ht2 = median(fia_ht_2),
+             med_dg = median(fia_dg),
+            med_hg = median(fia_hg),
+            med_dds = median(fia_dds),
+            med_dg_err = median(dg_err),
+            med_hg_err = median(hg_err),
+            med_ldds_err = median(ldds_err)) |>
+  ungroup() |>
+  # want to get plot information back
+  left_join(distinct(trees_err[c('CID', 'LATITUDE', 'LONGITUDE',
+                                 'EMAP_HEX',  'LOCATION', 'ECOREGION', 
+                                 'AGE', 'ASPECT', 'SLOPE', 'ELEVFT', 'PV_CODE',
+                                 'OWNCD',
+                                 'dominant_sp', 'matched_by')]))
+head(stand_sp_err)
+
+hab_frequencies <- stand_err |>
+  group_by(dominant_sp) |>
+  tally() |>
+  arrange(desc(n))
+
+hab_frequencies
+
+common_habs <- hab_frequencies$dominant_sp[1:6]
+```
+
+Finally, a color palette:
+
+```{r}
+#| label: color-pal
+#| code-fold: false
+spectral_plus <- c(RColorBrewer::brewer.pal(11, 'Spectral'), '#aaa', '#aaa')
+```
+
+### Spatial Data
+
+This is primarily for context when mapping.
+
+```{r}
+#| label: read-spatial
+#| code-fold: false
+#| collapse: true
+
+variants <- here('raw_data', 'FVSVariantMap20210525', 
+                         'FVS_Variants_and_Locations.shp') |>
+  st_read() |>
+  filter(FVSVariant != 'AK') |>
+  mutate(ie_locs = factor(ifelse(FVSVariant == 'IE'|FVSVariant == 'EM', FVSLocName, NA))) |>
+  group_by(ie_locs, FVSVariant) |>
+  summarize() |>
+  ungroup()
+
+ie <- filter(variants, FVSVariant == 'IE') |>
+  select(geometry) |>
+  summarize()
+
+ie_buffered <- st_buffer(ie, dist = 100*1000) |>
+  st_intersection(variants) |># don't want to go up into Canada
+  summarize() |>
+  st_convex_hull()
+epa_hexes <- st_read(here('raw_data', 
+                          'FIA_Forest_Biomass_Estimates_1873',
+                          'data',
+                          'CONUSbiohex2020.shp')) |>
+  select(EMAP_HEX, geometry) |>
+  st_transform(crs = st_crs(variants))
+
+ie_hexes <- epa_hexes |>
+  st_filter(ie_buffered,
+            .predicate = st_intersects)
+
+states <- usmap::us_map(regions = 'states', include = c('ID', 'MT', 'OR', 'WA')) |>
+  st_transform(crs = st_crs(ie_buffered))
+
+stand_err_spat <- st_as_sf(stand_err, coords = c('LONGITUDE', 'LATITUDE'),
+                           crs = 'epsg:4269') |>
+  st_transform(crs = st_crs(ie_buffered))
+```
+
+And the locations of a few towns/cities for context.
+
+```{r}
+#| code-fold: false
+missoula <- st_as_sf(data.frame(lat = 46.872890, lon = -114.004997),
+                     coords = c('lon', 'lat'),
+                     crs = 'epsg:4326')
+spokane <- st_as_sf(data.frame(lat = 47.658779, lon = -117.436048),
+                    coords = c('lon', 'lat'),
+                    crs = 'epsg:4326')
+moscow <- st_as_sf(data.frame(lat = 46.731705, lon = -116.999939),
+                  coords = c('lon', 'lat'),
+                  crs = 'epsg:4326')
+```
+
+
+## Predictor Visualizations
+
+### Aspect, Elevation, and Habitat Type
+
+Contours are every 2000ft, starting at 1300ft.
+
+All habitat types:
+
+```{r}
+min_elev <- min(floor(stand_err$ELEVFT))
+max_elev <- max(ceiling(stand_err$ELEVFT))
+stand_err |>
+  mutate(asp_rotated = (90-ASPECT) %% 360,
+         elev_band = (cut(ELEVFT, 
+                         breaks = seq(min(floor(ELEVFT)),
+                                      max(ceiling(ELEVFT)),
+                                      by = 500),
+                         labels = FALSE,
+                         include.lowest = TRUE)-1)*500 + min_elev,
+         targ_x = (max_elev-ELEVFT)*cos(pi*asp_rotated/180),
+         targ_y = (max_elev-ELEVFT)*sin(pi*asp_rotated/180)) |>
+  ggplot()+
+  geom_point(aes(x = targ_x, y = targ_y), alpha = 0.75, color = 'salmon', size = 1)+
+  geom_circle(data = data.frame(x0 = 0, y0 = 0, 
+                                r = seq(min_elev, max_elev, by = 2000)), 
+              aes(x0 = x0, y0 = y0, r = r))+
+  annotate(geom = 'text', x = max_elev, y = 500, label = '1300', size = 2)+
+  annotate(geom = 'text', x = max_elev-2000, y = 1000, label = '3300', size = 2)+
+  geom_hline(aes(yintercept = 0), color = 'lightgrey')+
+  geom_vline(aes(xintercept = 0), color = 'lightgrey')+
+  # annotate(geom = 'text', label = 'N', x = 0, y = 10000)+
+  # annotate(geom = 'text', label = 'W', x = -10000, y = 0)+
+  # annotate(geom = 'text', label = 'S', x = 0, y = -10000)+
+  # annotate(geom = 'text', label = 'E', x = 10000, y = 0)+
+  coord_fixed()+
+  theme_void()+
+  labs(x = '', y = '')+
+  facet_wrap(facets = vars(dominant_sp))
+```
+
+Unsurprisingly, subalpine fir, subalpine larch, whitebark pine, and lodgepole pine habitat types are all high elevations. Spruces, hemlocks, grand fir, and cedar habitat types make up the middle elevation bands. Douglas-fir is at most elevations except the very highest north-facing slopes and the lowest elevations. Ponderosa pine habitat types are somewhat more concentrated on south-facing slopes, and north-facing PIPO habitat types are at lower elevations.
+
+Simplified habitat types (just the most common ones):
+
+```{r}
+stand_err |>
+  mutate(asp_rotated = (90-ASPECT) %% 360,
+         elev_band = (cut(ELEVFT, 
+                         breaks = seq(min(floor(ELEVFT)),
+                                      max(ceiling(ELEVFT)),
+                                      by = 500),
+                         labels = FALSE,
+                         include.lowest = TRUE)-1)*500 + min_elev,
+         targ_x = (max_elev-ELEVFT)*cos(pi*asp_rotated/180),
+         targ_y = (max_elev-ELEVFT)*sin(pi*asp_rotated/180),
+         dominant_sp_simple = ifelse(dominant_sp %in% common_habs, dominant_sp, 'other')) |>
+  ggplot()+
+  geom_point(aes(x = targ_x, y = targ_y), alpha = 0.75, color = 'salmon', size = 1)+
+  geom_circle(data = data.frame(x0 = 0, y0 = 0, 
+                                r = seq(min_elev, max_elev, by = 2000)), 
+              aes(x0 = x0, y0 = y0, r = r))+
+  annotate(geom = 'text', x = max_elev, y = 500, label = '1300', size = 2)+
+  annotate(geom = 'text', x = max_elev-2000, y = 1000, label = '3300', size = 2)+
+  geom_hline(aes(yintercept = 0), color = 'lightgrey')+
+  geom_vline(aes(xintercept = 0), color = 'lightgrey')+
+  annotate(geom = 'text', label = 'N', x = 0, y = 10000)+
+  annotate(geom = 'text', label = 'W', x = -10000, y = 0)+
+  annotate(geom = 'text', label = 'S', x = 0, y = -10000)+
+  annotate(geom = 'text', label = 'E', x = 10000, y = 0)+
+  coord_fixed()+
+  theme_void()+
+  labs(x = '', y = '')+
+  facet_wrap(facets = vars(dominant_sp_simple))
+```
+
+### Ecoregion
+
+Ecoregion polygons from https://earthworks.stanford.edu/catalog/stanford-tj200ct4975; forest boundaries from https://data.fs.usda.gov/geodata/edw/datasets.php?dsetCategory=boundaries.
+
+```{r}
+eco_poly <- st_read(here('raw_data', 'ecoregions', 'ecoregp075.shp')) |>
+  st_transform(crs = st_crs(ie_buffered)) |>
+  st_crop(ie_buffered)
+
+forest_poly <- st_read(here('raw_data', 'forest_admin_bnds', 'S_USA.BdyAdm_LSRS_AdministrativeForest.shp')) |>
+  st_transform(crs = st_crs(ie_buffered)) |>
+  st_crop(ie_buffered) |>
+  select(ADMINFORES, REGION, FORESTNUMB, FORESTNAME)
+
+stand_err_eco_spat <- st_intersection(stand_err_spat, eco_poly)
+
+ggplot()+
+  geom_sf(data = forest_poly, aes(fill = FORESTNAME, color = FORESTNAME))+
+  geom_sf(data = eco_poly, fill = NA, lwd = 1)+
+  scale_color_viridis_d(option = 'turbo')+
+  scale_fill_viridis_d(option = 'turbo')
+```
+Generally, NF boundaries (filled shapes) are not perfectly aligned with ecoregion (at the section level). Most forests cover 2-3 ecosections.
+
+```{r}
+ggplot()+
+  geom_sf(data = forest_poly, aes(fill = FORESTNAME, color = FORESTNAME))+
+  geom_sf(data = summarize(group_by(eco_poly, PROVINCE)), fill = NA, lwd = 1)+
+  scale_color_viridis_d(option = 'turbo')+
+  scale_fill_viridis_d(option = 'turbo')
+```
+We get a good amount of variety in terms of which national forests are in which ecoprovinces.
+```{r}
+ggplot()+
+  geom_sf(data = forest_poly, aes(fill = FORESTNAME, color = FORESTNAME))+
+  geom_sf(data = summarize(group_by(eco_poly, DIVISION)), fill = NA, lwd = 1)+
+  scale_color_viridis_d(option = 'turbo')+
+  scale_fill_viridis_d(option = 'turbo')
+```
+
+At the division level, most forests fall within one division.
+
+```{r}
+stand_err_eco_spat |>
+  st_drop_geometry() |>
+  ggplot(aes(x = PROVINCE, fill = dominant_sp))+
+  geom_bar()
+
+stand_err_eco_spat |>
+  st_drop_geometry() |>
+  ggplot(aes(x = SECTION, fill = dominant_sp))+
+  geom_bar()
+```
+There's good mixing of habitat types within ecoprovince and ecosection, which is a good sign.
+
+### Eco Hierarchy and SD
+
+```{r}
+tree_err_spat <- trees_err |>
+  filter(!is.na(dg_err)) |>
+  select(fvs_sp, LONGITUDE, LATITUDE, dg_err) |>
+  st_as_sf(coords = c('LONGITUDE', 'LATITUDE'),
+                           crs = 'epsg:4269') |>
+  st_transform(crs = st_crs(ie_buffered)) |>
+  st_intersection(eco_poly)
+
+dom_summ <- tree_err_spat |>
+  st_drop_geometry() |>
+  rename(name = DOMAIN) |>
+  group_by(name) |>
+  summarize(std_dev = sd(dg_err, na.rm = TRUE),
+            n = n(),
+            level = 'domain')
+
+div_summ <- tree_err_spat |>
+  st_drop_geometry() |>
+  rename(name = DIVISION) |>
+  group_by(name) |>
+  summarize(std_dev = sd(dg_err, na.rm = TRUE),
+            n = n(),
+            level = 'division')
+
+prov_summ <- tree_err_spat |>
+  st_drop_geometry() |>
+  rename(name = PROVINCE) |>
+  group_by(name) |>
+  summarize(std_dev = sd(dg_err, na.rm = TRUE),
+            n = n(),
+            level = 'province')
+
+sect_summ <- tree_err_spat |>
+  st_drop_geometry() |>
+    rename(name = SECTION) |>
+  group_by(name) |>
+  summarize(std_dev = sd(dg_err, na.rm = TRUE),
+            n = n(),
+            level = 'section')
+
+eco_sd <- bind_rows(dom_summ, div_summ, prov_summ, sect_summ) |>
+  mutate(level = factor(level, 
+                        levels = c('domain', 'division', 'province', 'section'), 
+                        ordered = TRUE))
+
+ggplot(eco_sd)+
+  geom_boxplot(aes(x = level, y = std_dev), outliers = FALSE)+
+  geom_jitter(aes(x = level, y = std_dev), width = 0.2)
+```
+

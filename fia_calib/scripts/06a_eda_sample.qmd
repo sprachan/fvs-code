@@ -1,0 +1,585 @@
+---
+title: "Exploratory Data Analysis 1: Sample Information"
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: true
+    code-summary: "Code to generate figure"
+    df-print: kable
+execute:
+  code-fold: true
+---
+
+## Setup
+First, packages.
+
+```{r}
+#| label: packages
+#| code-fold: false
+#| collapse: true
+library(dplyr)
+library(ggplot2)
+library(patchwork)
+library(here)
+library(rFVSIEtools)
+```
+And some custom plotting functions.
+
+```{r}
+#| label: functions
+#| code-fold: false
+
+plot_tpa_dist <- function(data, dist_var, tpa_var, ..., bins = 10){
+  dv <- pull(data, {{dist_var}})
+  dots <- rlang::enquos(...)
+  stopifnot(length(dots) <= 1)
+  if(length(dots) == 0){
+    breaks <- seq(0, ceiling(max(dv)), length.out = bins)
+    plt_dat <- select(data, {{dist_var}}, {{tpa_var}}) |>
+      mutate(bin = cut({{dist_var}}, breaks = breaks, ordered_result = TRUE)) |>
+      summarize(n_trees = sum({{tpa_var}}), .by = bin)
+    p <- ggplot(plt_dat, aes(x = bin, y = n_trees))+
+      geom_col()
+  }else{
+    plt_dat <- data |>
+      group_by(...) |>
+      mutate(bin = cut({{dist_var}},
+                       breaks = seq(0, 
+                                    ceiling(max({{dist_var}})), 
+                                    length.out = bins)),
+             bin = forcats::fct_reorder(bin, {{dist_var}})) |>
+      ungroup() |>
+      
+      group_by(bin, ...) |>
+      summarize(n_trees = sum({{tpa_var}}))
+    p <- ggplot(plt_dat, aes(x = bin, y = n_trees, fill = !!dots[[1]]))+
+      geom_col()
+  }
+  p
+}
+```
+
+### Error data
+
+In addition to reading in the data here, I calculate trees per acre. This depends on whether the tree was measured in a subplot, microplot, or macroplot. 
+
+```{r}
+#| label: read-error-data
+#| code-fold: false
+
+trees_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |>
+  filter(calib_use) |>
+  mutate(macro = NUM_PLOTS != 4,
+         TPA_1 = case_when(fia_dbh_1 < 5 ~ 74.965282,
+                           !macro&fia_dbh_1 >= 5 ~ 6.018046,
+                           macro&fia_dbh_1 >= 5 ~ 0.999188,
+                           .default = NA),
+         TPA_2 = case_when(fia_dbh_2 < 5 ~ 74.965282,
+                           !macro&fia_dbh_2 >= 5 ~ 6.018046,
+                           macro&fia_dbh_2 >= 5 ~ 0.999188,
+                           .default = NA))
+head(trees_err)
+```
+
+
+
+Instead of going with the default alphabetical factor ordering, I'll order the "species" factor in the dataframe in order of species prevalence.
+
+```{r}
+#| label: species-factor
+#| code-fold: false
+
+sp_table <- sort(table(trees_err$common_name), decreasing = TRUE)
+knitr::kable(sp_table, col.names = c('Species', 'Frequency'))
+trees_err$common_name <- factor(trees_err$common_name, 
+                                levels = names(sp_table),
+                                ordered = TRUE)
+sp_group_table <- sort(table(trees_err$fvs_sp_group), decreasing = TRUE)
+trees_err$fvs_sp_group <- factor(trees_err$fvs_sp_group, 
+                                 levels = names(sp_group_table),
+                                 ordered = TRUE)
+```
+
+I'll also define 4 study species to focus on. Douglas-fir is the most common species in the study region, it's widespread, and it's commercially important (though perhaps more so in the PNW than the inland northwest). Lodgepole pine is also quite common, and it spans an elevational gradient, which makes it a useful case study to look at some elevational effects. Western larch is more specialized to somewhat wetter areas. Finally, ponderosa pine is more restricted to dry sites than the other species, so trends in FVS' PIPO accuracy may give some insight into dry site accuracy.
+
+```{r}
+#| label: def-study-sp
+#| code-fold: false
+study_sps <- c('Douglas-fir', 'lodgepole pine', 
+               'western larch',  'ponderosa pine')
+```
+
+The initial tree dataframe is structured where every row is a tree. However, sometimes we may want to instead look at error at the species-within-stand level, and sometimes just at the stand level. I took the median of all metrics because they are quite skewed, so the mean is not as accurate a representation of the center of the distribution. The `matched_by` column describes how the habitat type was matched.
+
+```{r}
+#| label: stand-err
+#| collapse: true
+#| code-fold: false
+
+stand_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |>
+  filter(!died, !broke, !started_broken) |>
+  group_by(CID) |>
+  summarize(med_dbh1 = median(fia_dbh_1),
+            med_ht1 = median(fia_ht_1),
+            med_dbh2 = median(fia_dbh_2),
+            med_ht2 = median(fia_ht_2),
+            med_dg = median(fia_dg),
+            med_hg = median(fia_hg),
+            med_dds = median(fia_dds),
+            med_dg_err = median(dg_err),
+            med_hg_err = median(hg_err),
+            med_ldds_err = median(ldds_err)) |>
+  ungroup() |>
+  # want to get plot information back
+  left_join(distinct(trees_err[c('CID', 'LATITUDE', 'LONGITUDE',
+                                 'EMAP_HEX',  'LOCATION', 'ECOREGION', 
+                                 'AGE', 'ASPECT', 'SLOPE', 'ELEVFT', 'PV_CODE', 
+                                 'dominant_sp', 'matched_by', 'OWNCD')]))
+head(stand_err)
+
+stand_sp_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |>
+  filter(!died, !broke, !started_broken) |>
+  group_by(CID, fvs_sp, common_name) |>
+  summarize(med_dbh1 = median(fia_dbh_1),
+            med_ht1 = median(fia_ht_1),
+            med_dbh2 = median(fia_dbh_2),
+            med_ht2 = median(fia_ht_2),
+             med_dg = median(fia_dg),
+            med_hg = median(fia_hg),
+            med_dds = median(fia_dds),
+            med_dg_err = median(dg_err),
+            med_hg_err = median(hg_err),
+            med_ldds_err = median(ldds_err)) |>
+  ungroup() |>
+  # want to get plot information back
+  left_join(distinct(trees_err[c('CID', 'LATITUDE', 'LONGITUDE',
+                                 'EMAP_HEX',  'LOCATION', 'ECOREGION', 
+                                 'AGE', 'ASPECT', 'SLOPE', 'ELEVFT', 'PV_CODE',
+                                 'OWNCD',
+                                 'dominant_sp', 'matched_by')]))
+head(stand_sp_err)
+```
+
+Finally, a color palette:
+
+```{r}
+#| label: color-pal
+#| code-fold: false
+spectral_plus <- c(RColorBrewer::brewer.pal(11, 'Spectral'), '#aaa', '#aaa')
+```
+
+## Sample Information
+
+### Zero Growth Trees
+
+```{r}
+trees_err$zero_growth <- trees_err$fia_dg == 0
+table(trees_err$zero_growth)
+hist(trees_err$fia_dbh_1[trees_err$zero_growth])
+trees_err |>
+  filter(zero_growth) |>
+  ggplot()+
+  geom_bar(aes(x = common_name))+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90))
+
+trees_err |>
+  filter(zero_growth) |>
+  ggplot()+geom_bar(aes(x = REM_INT), color = 'black')+
+  theme_bw()+
+  labs(x = 'Remeasurement Interval', y = 'Count')
+```
+Most of the trees that had 0 diameter growth were lodgepole pines. Interestingly, most of the trees were also in the 10 year remeasurement interval.
+
+```{r}
+trees_err |>
+  filter(zero_growth) |>
+  ggplot()+geom_histogram(aes(x = fvs_dds), color = 'black', fill = 'lightgrey', bins = 30)+
+  theme_bw()
+```
+A diameter growth of 0 indicates that the tree grew less than 0.05" because FIA measures DBH to the nearest 0.1". However, DG = 0 means ldds error is $\log(0)$ which gives $-\infty$ in R. Moreover, these trees with no measured diameter growth generally have some amount of FVS diameter growth; sometimes quite a bit of it! Therefore, it would be nice to be able to dub in some non-zero diameter growth for these trees. However, what should we dub in and how much does it matter? We can answer these questions with a sensitivity analysis.
+
+### Sensitivity analysis for zero-growth trees
+
+This will be focused on lodgepole pines.
+
+```{r}
+#| code-fold: false
+dub_opts <- c(0, seq(0.01, 0.04, by = 0.001))
+test_trees <- filter(trees_err, common_name == 'lodgepole pine') |>
+  select(fia_dbh_1, fia_dbh_2, fia_dds, fvs_sp, REM_INT)
+
+avg_dds <- numeric(length(dub_opts))
+sd_dds <- numeric(length(dub_opts))
+avg_ldds <- numeric(length(dub_opts)-1)
+sd_ldds <- numeric(length(dub_opts)-1)
+
+for(i in seq_along(dub_opts)){
+  # only adjust the DBH if it grew less than 0.04"
+  test_trees$d2_adj <- ifelse(test_trees$fia_dbh_2-test_trees$fia_dbh_1 == 0,
+                              test_trees$fia_dbh_2+dub_opts[i],
+                              test_trees$fia_dbh_2)
+  test_trees$dds_adj <- dob_to_dib(test_trees$fvs_sp, test_trees$d2_adj)^2-
+    dob_to_dib(test_trees$fvs_sp, test_trees$fia_dbh_1)^2
+  
+  test_trees$ldds_adj <- log(test_trees$dds_adj)*(10/test_trees$REM_INT)
+  avg_dds[i] <- mean(test_trees$dds_adj)
+  sd_dds[i] <- sd(test_trees$dds_adj)
+  if(i >= 2){
+    avg_ldds[i-1] <- mean(test_trees$ldds_adj)
+    sd_ldds[i-1] <- sd(test_trees$ldds_adj)
+  }
+}
+
+plot(dub_opts, avg_dds)
+plot(dub_opts, sd_dds)
+plot(dub_opts[2:length(dub_opts)], avg_ldds)
+plot(dub_opts[2:length(dub_opts)], sd_ldds)
+avg_dds[length(dub_opts)]-avg_dds[1]
+avg_dds[length(dub_opts)]-avg_dds[dub_opts == 0.025]
+avg_ldds[which(dub_opts == 0.025)-1]-avg_ldds[1]
+```
+
+It appears that average DDS is not particularly sensitive to the choice of value we use to "dub in" DDS. Adding +0.04 to D2 for each 0 DG tree only increases average DDS by 0.034 in^2; adding +0.025 increases average DDS by 0.013. Going from adding + 0.01 to +0.025 increases average lDDS by 0.066.
+
+Just for fun, let's see what happens if we do this across all trees. I would expect the effects to be even smaller because lodgepoles have by far the highest proportion of observed 0 diameter growth values.
+
+```{r}
+#| code-fold: false
+dub_opts <- c(0, seq(0.01, 0.04, by = 0.001))
+test_trees <- trees_err |>
+  select(fia_dbh_1, fia_dbh_2, fia_dds, fvs_sp, REM_INT)
+
+avg_dds <- numeric(length(dub_opts))
+sd_dds <- numeric(length(dub_opts))
+
+for(i in seq_along(dub_opts)){
+  # only adjust the DBH if it grew less than 0.04"
+  test_trees$d2_adj <- ifelse(test_trees$fia_dbh_2-test_trees$fia_dbh_1 == 0,
+                              test_trees$fia_dbh_2+dub_opts[i],
+                              test_trees$fia_dbh_2)
+  test_trees$dds_adj <- dob_to_dib(test_trees$fvs_sp, test_trees$d2_adj)^2-
+    dob_to_dib(test_trees$fvs_sp, test_trees$fia_dbh_1)^2
+  
+  test_trees$ldds_adj <- log(test_trees$dds_adj)*(10/test_trees$REM_INT)
+  avg_dds[i] <- mean(test_trees$dds_adj)
+  sd_dds[i] <- sd(test_trees$dds_adj)
+  
+    if(i >= 2){
+    avg_ldds[i-1] <- mean(test_trees$ldds_adj)
+    sd_ldds[i-1] <- sd(test_trees$ldds_adj)
+  }
+}
+
+plot(dub_opts, avg_dds)
+plot(dub_opts, sd_dds)
+plot(dub_opts[2:length(dub_opts)], avg_ldds)
+plot(dub_opts[2:length(dub_opts)], sd_ldds)
+
+avg_dds[length(dub_opts)]-avg_dds[1]
+avg_dds[length(dub_opts)]-avg_dds[2]
+avg_dds[length(dub_opts)]-avg_dds[dub_opts == 0.025]
+avg_ldds[which(dub_opts == 0.025)-1]-avg_ldds[1]
+```
+
+As expected.
+
+
+### Ownership
+
+```{r}
+stand_err |>
+  mutate(own_name = case_when(OWNCD == 11 ~ 'National Forest',
+                              OWNCD == 21 ~ 'National Park Service',
+                              OWNCD == 22 ~ 'BLM',
+                              OWNCD == 23 ~ 'FWS',
+                              OWNCD == 24 ~ 'DOE/DOD',
+                              OWNCD == 31 ~ 'State',
+                              OWNCD == 32 ~ 'Local',
+                              OWNCD == 33 ~ 'Other non-federal public',
+                              OWNCD == 46 ~ 'Private'),
+         own_cat = case_when(OWNCD <= 25 ~ 'Federal',
+                             OWNCD <= 33 ~ 'Non-federal public',
+                             OWNCD >= 40 ~ 'Private')) |>
+  ggplot()+geom_bar(aes(x = own_cat, fill = own_name))+
+  theme_bw()+
+  labs(x = 'Ownership category', y = 'Number of conditions', fill = 'Ownership')+
+  scale_fill_brewer(type = 'qual')
+
+stand_err |>
+  mutate(own_name = case_when(OWNCD == 11 ~ 'National Forest',
+                              OWNCD == 21 ~ 'National Park Service',
+                              OWNCD == 22 ~ 'BLM',
+                              OWNCD == 23 ~ 'FWS',
+                              OWNCD == 24 ~ 'DOE/DOD',
+                              OWNCD == 31 ~ 'State',
+                              OWNCD == 32 ~ 'Local',
+                              OWNCD == 33 ~ 'Other non-federal public',
+                              OWNCD == 46 ~ 'Private')) |>
+  group_by(own_name, OWNCD) |>
+  tally() |>
+  ungroup() |>
+  mutate(pct = 100*n/sum(n)) |>
+  arrange(desc(pct))
+```
+The majority (70%) of stands are on National Forest land. The remaining stands are mostly on private lands (21%), followed by state-owned lands (5%), NPS, and BLM lands (about 2% each). 
+
+```{r}
+stand_err |>
+  mutate(own_name = case_when(OWNCD == 11 ~ 'National Forest',
+                              OWNCD == 21 ~ 'National Park Service',
+                              OWNCD == 22 ~ 'BLM',
+                              OWNCD == 23 ~ 'FWS',
+                              OWNCD == 24 ~ 'DOE/DOD',
+                              OWNCD == 31 ~ 'State',
+                              OWNCD == 32 ~ 'Local',
+                              OWNCD == 33 ~ 'Other non-federal public',
+                              OWNCD == 46 ~ 'Private'),
+         own_cat = case_when(OWNCD <= 25 ~ 'Federal',
+                             OWNCD <= 33 ~ 'Non-federal public',
+                             OWNCD >= 40 ~ 'Private')) |>
+  ggplot()+geom_violin(aes(x = own_cat, y = ELEVFT), quantile.linetype = 'solid',
+                       quantiles = 0.5)
+```
+
+
+### Species composition
+
+```{r}
+trees_err |>
+  group_by(common_name) |>
+  tally() |>
+  mutate(prop = n/sum(n)) |>
+  arrange(desc(prop))
+
+```
+
+
+```{r}
+#| label: species_comp
+
+trees_err |>
+  ggplot()+
+  geom_bar(aes(x = fvs_sp_group, fill = fvs_sp_group), color = 'darkgrey')+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.2),
+        legend.position = 'bottom')+
+  labs(x = 'Species group', y = 'Number of trees', fill = 'Species group')+
+  scale_fill_manual(values = spectral_plus)
+```
+Pines are the most common genus. Douglas-firs are next, then true firs. These three groups dominate the data.
+
+```{r}
+#| code-fold: false
+#| echo: false
+ggsave(here('figures', 'all-IE_species_dist.png'),
+       width = 8, height = 4, units = 'in')
+```
+
+```{r}
+trees_err |>
+  mutate(state = case_when(substr(CID, 1, 2) == 16 ~ 'Idaho',
+                           substr(CID, 1, 2) == 30 ~ 'Montana',
+                           substr(CID, 1, 2) == 41 ~ 'Oregon',
+                           substr(CID, 1, 2) ==  53 ~ 'Washington')) |>
+  ggplot()+
+  geom_bar(aes(x = state, fill = fvs_sp_group), color = 'darkgrey')+
+  scale_fill_manual(values = spectral_plus)+
+  theme_bw()+
+  labs(x = 'State', y = 'Number of trees', fill = 'Species group')
+```
+Splitting it out by state, most trees come from Montana and Idaho (which makes sense considering that the IE variant covers mostly these two states and only a small bit of WA). Idaho has a larger proportion of spruce and cedar, perhaps reflecting the more moist climate of the Idaho panhandle. Montana has more pine and Doug fir.
+
+```{r}
+#| code-fold: false
+#| echo: false
+ggsave(here('figures', 'all-IE_trees_per_state.png'),
+       width = 8, height = 4, units = 'in')
+```
+
+### DBH and Height Distributions
+
+```{r}
+#| label: dbh-dist
+ggplot(trees_err)+
+  geom_histogram(aes(x = fia_dbh_1), color = 'darkgrey', bins = 16)+
+  theme_bw()+
+  labs(x = 'Initial DBH', y = 'Number of trees')+
+plot_tpa_dist(trees_err, fia_dbh_1, TPA_1, bins = 16)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))+
+  labs(x = 'Initial DBH',
+       y = 'TPA')
+```
+Initial DBH distribution is skewed as expected; correcting # of trees to TPA makes the J-shape a bit clearer though sort of wipes out the big trees. The left panel more accurately represents the sample we have for FVS; the right panel maybe more accurately represents what the FIA sample tells us about tree DBH distributions across the region.
+
+```{r}
+#| echo: false
+#| output: false
+trees_err |>
+  ggplot()+
+  geom_histogram(aes(x = fia_dbh_1), color = 'darkgrey')+
+  theme_bw()+
+  labs(x = 'Initial DBH', y = 'Number of trees')
+ggsave(here('figures', 'all-IE_initial_dbh_dists.png'),
+       width = 6, height = 4, units = 'in')
+```
+
+```{r}
+#| label: height-dist
+
+ggplot(trees_err)+
+  geom_histogram(aes(x = fia_ht_1), color = 'darkgrey', bins = 18)+
+  theme_bw()+
+  labs(x = 'Initial Height', y = 'Number of trees')+
+plot_tpa_dist(trees_err, fia_ht_1, TPA_1, bins = 10)+
+  theme_bw()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))+
+  labs(x = 'Initial Height',
+       y = 'TPA')
+```
+As with DBH, this is not unexpected and the TPA expansion reflects more of an "on-the-ground" translation of FIA data than how it'll show up in our FVS error investigation.
+
+```{r}
+#| echo: false
+#| output: false
+trees_err |>
+  ggplot()+
+  geom_histogram(aes(x = fia_ht_1), color = 'darkgrey')+
+  theme_bw()+
+  labs(x = 'Initial Height', y = 'Number of trees')
+ggsave(here('figures', 'all-IE_initial_ht_dists.png'),
+       width = 6, height = 4, units = 'in')
+```
+
+#### Study species only
+
+```{r}
+#| label: study-sp-dbh
+#| collapse: true
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  ggplot()+
+  geom_histogram(aes(x = fia_dbh_1, fill = common_name), color = 'darkgrey')+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  labs(x = 'Initial DBH', y = 'Number of trees', fill = 'Species')+
+  theme_bw()+
+  theme(legend.position = 'bottom')+
+  scale_fill_brewer(palette = 'Dark2')
+  
+plot_tpa_dist(filter(trees_err, common_name %in% study_sps),
+                fia_dbh_1, TPA_1, common_name, bins = 20)+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  labs(x = 'Initial DBH', y = 'TPA', fill = 'Species')+
+  theme_bw()+
+  theme(legend.position = 'bottom',
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 6))+
+  scale_fill_brewer(palette = 'Dark2')
+```
+All study species have pretty similar initial DBH curves as the whole sample, though lodgepole has fewer little guys.
+
+```{r}
+#| label: study-sp-height
+#| collapse: true
+trees_err |>
+  filter(common_name %in% study_sps) |>
+  ggplot()+
+  geom_histogram(aes(x = fia_ht_1, fill = common_name), color = 'darkgrey')+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  labs(x = 'Initial DBH', y = 'Number of trees', fill = 'Species')+
+  theme_bw()+
+  theme(legend.position = 'bottom')+
+  scale_fill_brewer(palette = 'Dark2')
+  
+plot_tpa_dist(filter(trees_err, common_name %in% study_sps),
+                fia_ht_1, TPA_1, common_name, bins = 15)+
+  facet_wrap(facets = vars(common_name), scales = 'free')+
+  labs(x = 'Initial Height', y = 'TPA', fill = 'Species')+
+  theme_bw()+
+  theme(legend.position = 'bottom',
+        axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1))+
+  scale_fill_brewer(palette = 'Dark2')
+```
+The lower number of short trees here is probably because seedlings are excluded, and by the time trees are fat enough to be not seedlings, they're probably closer to a foot tall (depending on species). Then we see the big spike, presumably where most saplings fall in, then fewer and fewer big trees. Again, not unexpected.
+
+### Remeasurement intervals
+
+```{r}
+#| label: rem-int-viz
+
+trees_err$REM_INT <- trees_err$INV_YEAR_2-trees_err$INV_YEAR_1
+
+rem <- trees_err |>
+  select(CID, REM_INT) |>
+  distinct() |>
+  group_by(REM_INT) |>
+  tally() 
+
+ggplot(rem)+
+  geom_col(aes(x = REM_INT, y = n))+
+  theme_bw()+
+  scale_x_continuous(breaks = seq(4, 15))+
+  labs(x = 'Remeasurement interval', y = '# of conditions')
+
+```
+Most plots (`{r} 100*round(sum(rem$n[rem$REM_INT >= 9&rem$REM_INT <= 12])/sum(rem$n), 2)`%) were remeasured between 9-12 years after the initial measurement. 
+
+```{r}
+arrange(rem, desc(n))
+```
+
+
+Finally, I'll look at error distributions by remeasurement interval.
+
+```{r}
+ggplot(trees_err)+
+  geom_boxplot(aes(x = factor(REM_INT), y = dg_err))+
+  geom_text(data = rem, aes(x = factor(REM_INT), label = n, y = 12))+
+  theme_bw()+
+  labs(x = 'Remeasurement Interval', y = 'Diameter growth error')
+```
+
+
+## Growth 
+
+### Growth distributions
+
+This is at the tree-level.
+
+```{r}
+#| label: growth-dists
+dg_dist <- trees_err |>
+  ggplot()+
+  geom_histogram(aes(x = fia_dg), color = 'black', fill = 'lightgrey')+
+  theme_bw()+
+  labs(x = 'FIA-measured diameter growth (in)',
+       y = 'Count')
+
+hg_dist <- trees_err |>
+  ggplot()+
+  geom_histogram(aes(x = fia_hg), color = 'black', fill = 'lightgrey')+
+  theme_bw()+
+  labs(x = 'FIA-measured height growth (in)',
+       y = 'Count')
+
+dds_dist <- trees_err |>
+  ggplot()+
+  geom_histogram(aes(x = fia_dds), color = 'black', fill = 'lightgrey')+
+  theme_bw()+
+  labs(x = 'FIA-measured DDS (in^2)',
+       y = 'Count')
+
+dg_dist|hg_dist|dds_dist
+
+```
+
+There is quite a range of diameter and height growth, which is promising; there's variation in the data that could potentially be captured in a model. Converting diameter growth to basal area increment causes the distribution to be much skewier.
+
+With the zero-growth adjustment, setting D2 to D1+0.025 when D2 = D1:
+
+```{r}
+trees_err <- trees_err |>
+  mutate(dbh2_adj = max(fia_dbh_2, fia_dbh_2+0.025))
+```
+
