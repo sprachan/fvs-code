@@ -82,9 +82,26 @@ trees_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |>
          TPA_2 = case_when(fia_dbh_2 < 5 ~ 74.965282,
                            !macro&fia_dbh_2 >= 5 ~ 6.018046,
                            macro&fia_dbh_2 >= 5 ~ 0.999188,
-                           .default = NA))
+                           .default = NA),
+         rm = fia_dg == 0)
 head(trees_err)
 ```
+
+```{r}
+table(trees_err$rm)
+hist(trees_err$fia_dbh_1[trees_err$rm])
+trees_err |>
+  filter(rm) |>
+  ggplot()+
+  geom_bar(aes(x = common_name))+
+  theme(axis.text.x = element_text(angle = 90))
+
+trees_err |>
+  filter(rm) |>
+  ggplot()+geom_bar(aes(x = REM_INT, fill = common_name), color = 'black')
+```
+Most of the trees that had 0 diameter growth were lodgepole pines. Interestingly, most of the trees were also in the 10 year remeasurement interval.
+
 
 Instead of going with the default alphabetical factor ordering, I'll order the "species" factor in the dataframe in order of species prevalence.
 
@@ -137,7 +154,7 @@ stand_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |>
   left_join(distinct(trees_err[c('CID', 'LATITUDE', 'LONGITUDE',
                                  'EMAP_HEX',  'LOCATION', 'ECOREGION', 
                                  'AGE', 'ASPECT', 'SLOPE', 'ELEVFT', 'PV_CODE', 
-                                 'dominant_sp', 'matched_by')]))
+                                 'dominant_sp', 'matched_by', 'OWNCD')]))
 head(stand_err)
 
 stand_sp_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |>
@@ -157,7 +174,8 @@ stand_sp_err <- readRDS(here('data', 'sim_outputs', 'all_IE_uncalib_err.RDS')) |
   # want to get plot information back
   left_join(distinct(trees_err[c('CID', 'LATITUDE', 'LONGITUDE',
                                  'EMAP_HEX',  'LOCATION', 'ECOREGION', 
-                                 'AGE', 'ASPECT', 'SLOPE', 'ELEVFT', 'PV_CODE', 
+                                 'AGE', 'ASPECT', 'SLOPE', 'ELEVFT', 'PV_CODE',
+                                 'OWNCD',
                                  'dominant_sp', 'matched_by')]))
 head(stand_sp_err)
 ```
@@ -229,6 +247,64 @@ moscow <- st_as_sf(data.frame(lat = 46.731705, lon = -116.999939),
 ## Sample Information
 
 The first set of graphics will explore the distribution of the data in various ways.
+
+### Ownership
+
+```{r}
+stand_err |>
+  mutate(own_name = case_when(OWNCD == 11 ~ 'National Forest',
+                              OWNCD == 21 ~ 'National Park Service',
+                              OWNCD == 22 ~ 'BLM',
+                              OWNCD == 23 ~ 'FWS',
+                              OWNCD == 24 ~ 'DOE/DOD',
+                              OWNCD == 31 ~ 'State',
+                              OWNCD == 32 ~ 'Local',
+                              OWNCD == 33 ~ 'Other non-federal public',
+                              OWNCD == 46 ~ 'Private'),
+         own_cat = case_when(OWNCD <= 25 ~ 'Federal',
+                             OWNCD <= 33 ~ 'Non-federal public',
+                             OWNCD >= 40 ~ 'Private')) |>
+  ggplot()+geom_bar(aes(x = own_cat, fill = own_name))+
+  theme_bw()+
+  labs(x = 'Ownership category', y = 'Number of conditions', fill = 'Ownership')+
+  scale_fill_brewer(type = 'qual')
+
+stand_err |>
+  mutate(own_name = case_when(OWNCD == 11 ~ 'National Forest',
+                              OWNCD == 21 ~ 'National Park Service',
+                              OWNCD == 22 ~ 'BLM',
+                              OWNCD == 23 ~ 'FWS',
+                              OWNCD == 24 ~ 'DOE/DOD',
+                              OWNCD == 31 ~ 'State',
+                              OWNCD == 32 ~ 'Local',
+                              OWNCD == 33 ~ 'Other non-federal public',
+                              OWNCD == 46 ~ 'Private')) |>
+  group_by(own_name, OWNCD) |>
+  tally() |>
+  ungroup() |>
+  mutate(pct = 100*n/sum(n)) |>
+  arrange(desc(pct))
+```
+The majority (70%) of stands are on National Forest land. The remaining stands are mostly on private lands (21%), followed by state-owned lands (5%), NPS, and BLM lands (about 2% each). 
+
+```{r}
+stand_err |>
+  mutate(own_name = case_when(OWNCD == 11 ~ 'National Forest',
+                              OWNCD == 21 ~ 'National Park Service',
+                              OWNCD == 22 ~ 'BLM',
+                              OWNCD == 23 ~ 'FWS',
+                              OWNCD == 24 ~ 'DOE/DOD',
+                              OWNCD == 31 ~ 'State',
+                              OWNCD == 32 ~ 'Local',
+                              OWNCD == 33 ~ 'Other non-federal public',
+                              OWNCD == 46 ~ 'Private'),
+         own_cat = case_when(OWNCD <= 25 ~ 'Federal',
+                             OWNCD <= 33 ~ 'Non-federal public',
+                             OWNCD >= 40 ~ 'Private')) |>
+  ggplot()+geom_violin(aes(x = own_cat, y = ELEVFT), quantile.linetype = 'solid',
+                       quantiles = 0.5)
+```
+
 
 ### Species composition
 
