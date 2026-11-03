@@ -78,16 +78,16 @@ plot(fia_per_hex)
 
 # Test/train split ----
 N <- length(unique(stand_info$CID))
-sample_size <- ceiling(0.3*N)
+sample_prop <- 0.7
 hexes <- unique(fia_per_hex$EMAP_HEX)
 
-fia_per_hex$prop <- ceiling(fia_per_hex$n*sample_size/N)
+fia_per_hex$n_samp <- floor(fia_per_hex$n*sample_prop)
 
 train_CIDs <- character(0)
 
 for(h in seq_along(hexes)){
   curr_hex <- hexes[h]
-  n_strat <- fia_per_hex$prop[h]
+  n_strat <- fia_per_hex$n_samp[h]
   cids <- stand_info$CID[stand_info$EMAP_HEX == curr_hex]
   samp <- sample(cids, size = n_strat, replace = FALSE)
   train_CIDs <- c(train_CIDs, samp)
