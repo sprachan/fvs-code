@@ -112,9 +112,13 @@ test <- stand_info |>
   mutate(n = ifelse(is.na(n), 0, n)) |>
   st_as_sf() 
 
-ggplot(train)+geom_sf(aes(fill = n))+scale_fill_viridis(option = 'mako')+labs(title = 'Train (n = 1548)')+
-  ggplot(test)+geom_sf(aes(fill = n))+scale_fill_viridis(option = 'rocket')+labs(title = 'Test (n = 2986)')+
-  ggplot(fia_per_hex)+geom_sf(aes(fill = n))+scale_fill_viridis(option = 'magma')+labs(title = 'All (n = 4534)')&
+n_train <- sum(train$n)
+n_test <- sum(test$n)
+n_total <- n_train+n_test
+
+ggplot(train)+geom_sf(aes(fill = n))+scale_fill_viridis(option = 'mako')+labs(title = paste0('Train (n = ', n_train,')'))+
+  ggplot(test)+geom_sf(aes(fill = n))+scale_fill_viridis(option = 'rocket')+labs(title = paste0('Test (n = ', n_test, ')'))+
+  ggplot(fia_per_hex)+geom_sf(aes(fill = n))+scale_fill_viridis(option = 'magma')+labs(title = paste0('All (n = ', n_total, ')'))&
   theme(legend.position = 'bottom', legend.title.position = 'bottom',
         legend.title = element_text(hjust = 0.5))&
   labs(fill = '# of plots')
